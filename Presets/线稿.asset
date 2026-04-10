@@ -1,0 +1,44 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 02d1f93b254ba7549b922e02d0e21b69, type: 3}
+  m_Name: "\u7EBF\u7A3F"
+  m_EditorClassIdentifier: 
+  preset:
+    name: "\u7EBF\u7A3F"
+    effectIntensity: 1
+    kuwaharaRadius: 0
+    saturation: 1.47
+    contrast: 0.9
+    brightness: 0.1
+    shadowThreshold: 0.45
+    shadowHueShift: 0.03
+    shadowSatBoost: 0.15
+    shadowDarken: 0.7
+    enableLines: 1
+    lineThickness: 5
+    depthThreshold: 0.5
+    normalThreshold: 1.5
+    lineColor: {r: 0.1509434, g: 0.1509434, b: 0.1509434, a: 1}
+    lineIntensity: 1
+    depthFalloff: 200
+    finalSaturation: 1.61
+    finalContrast: 1.05
+    shadowTint: {r: 0, g: 0, b: 0.04, a: 1}
+    highlightTint: {r: 0.04, g: 0.02, b: 0, a: 1}
+    shadowInfluence: 0.507
+    highlightInfluence: 0.2
+    enableSilhouette: 1
+    silhouetteShadowColor: {r: 1, g: 1, b: 1, a: 1}
+    silhouetteMidColor: {r: 0.735849, g: 0.735849, b: 0.735849, a: 1}
+    silhouetteHighColor: {r: 1, g: 1, b: 1, a: 1}
+    silhouetteThreshold1: 0.166
+    silhouetteThreshold2: 0.879
