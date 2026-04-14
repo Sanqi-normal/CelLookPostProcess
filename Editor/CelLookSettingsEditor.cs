@@ -5,6 +5,7 @@ using UnityEditor;
 using UnityEditor.Rendering;
 using UnityEngine;
 using UnityEngine.Rendering;
+using System.IO;
 
 namespace CelLookPostProcess
 {
@@ -12,34 +13,77 @@ namespace CelLookPostProcess
     sealed class CelLookSettingsEditor : VolumeComponentEditor
     {
         private CelLookPresetAsset[] _presets;
-        private int _selectedPresetIndex = -1;
+        private int _selectedPresetIndex = 0; // 0 = "-- Select --"
         private string _newPresetName = "My Preset";
-        private const string PRESETS_FOLDER = "Assets/CelLookPostProcess/Presets";
+        private string _presetsFolder;
 
         private void OnEnable()
         {
+            _presetsFolder = FindPresetsFolder();
             LoadPresets();
+        }
+
+        private string FindPresetsFolder()
+        {
+            string[] guids = AssetDatabase.FindAssets("t:CelLookPresetAsset", new[] { "Assets" });
+            if (guids.Length > 0)
+            {
+                string path = AssetDatabase.GUIDToAssetPath(guids[0]);
+                return Path.GetDirectoryName(path);
+            }
+
+            guids = AssetDatabase.FindAssets("t:MonoScript", new[] { "Assets" });
+            foreach (string guid in guids)
+            {
+                string path = AssetDatabase.GUIDToAssetPath(guid);
+                if (path.Contains("CelLookSettings.cs"))
+                {
+                    string folder = Path.GetDirectoryName(path);
+                    string presetsPath = Path.Combine(folder, "Presets");
+                    if (!AssetDatabase.IsValidFolder(presetsPath))
+                    {
+                        AssetDatabase.CreateFolder(folder, "Presets");
+                    }
+                    return presetsPath;
+                }
+            }
+
+            string fallbackPath = "Assets/CelLookPostProcess/Presets";
+            if (!AssetDatabase.IsValidFolder(fallbackPath))
+            {
+                string parent = "Assets/CelLookPostProcess";
+                if (!AssetDatabase.IsValidFolder(parent))
+                    AssetDatabase.CreateFolder("Assets", "CelLookPostProcess");
+                AssetDatabase.CreateFolder(parent, "Presets");
+            }
+            return fallbackPath;
         }
 
         private void LoadPresets()
         {
-            if (!AssetDatabase.IsValidFolder(PRESETS_FOLDER))
+            if (!AssetDatabase.IsValidFolder(_presetsFolder))
             {
-                AssetDatabase.CreateFolder("Assets/CelLookPostProcess", "Presets");
+                _presetsFolder = FindPresetsFolder();
             }
 
-            string[] guids = AssetDatabase.FindAssets("t:CelLookPresetAsset", new[] { PRESETS_FOLDER });
+            string[] guids = AssetDatabase.FindAssets("t:CelLookPresetAsset", new[] { _presetsFolder });
             _presets = new CelLookPresetAsset[guids.Length];
             for (int i = 0; i < guids.Length; i++)
             {
                 string path = AssetDatabase.GUIDToAssetPath(guids[i]);
                 _presets[i] = AssetDatabase.LoadAssetAtPath<CelLookPresetAsset>(path);
             }
+
+            // 校正 _selectedPresetIndex 防止越界
+            int maxIndex = _presets.Length; // 有效范围 0 ~ _presets.Length
+            if (_selectedPresetIndex > maxIndex)
+                _selectedPresetIndex = 0;
         }
 
+        // 返回当前选中的预设（index=0 为 "-- Select --"，index>=1 为真实预设）
         private CelLookPresetAsset GetSelectedPreset()
         {
-            if (_selectedPresetIndex > 0 && _selectedPresetIndex <= _presets.Length)
+            if (_selectedPresetIndex >= 1 && _selectedPresetIndex <= _presets.Length)
                 return _presets[_selectedPresetIndex - 1];
             return null;
         }
@@ -47,12 +91,12 @@ namespace CelLookPostProcess
         public override void OnInspectorGUI()
         {
             EditorGUILayout.HelpBox(
-                "Cel Look セルルック风格后处理\n" +
-                "默认强度为0(无效果)。调整全局强度(Effect Intensity)开启。\n" +
+                "Cel Look NPR 风格后处理渲染器\n" +
+                "调整全局强度(Effect Intensity)以开启效果。\n" +
                 "Pass 0: Kuwahara 抹除噪点暗斑\n" +
-                "Pass 1: 严格二分法色块化\n" +
-                "Pass 2: 漫画线条 (剔除天空)\n" +
-                "Pass 3: Pop Grading 与原图混合",
+                "Pass 1: 严格二分法色块化 (支持纯色剪影模式)\n" +
+                "Pass 2: 漫画线条描边 (深度/法线边缘检测)\n" +
+                "Pass 3: Pop Grading、图案排线阴影与复古CRT显示器特效混合",
                 MessageType.Info);
 
             EditorGUILayout.Space(4);
@@ -67,19 +111,22 @@ namespace CelLookPostProcess
         {
             EditorGUILayout.LabelField("Presets", EditorStyles.boldLabel);
 
+            // 构建下拉列表名称，使用 Asset 文件名（name 属性）作为显示名
             int popupCount = _presets.Length + 1;
             string[] presetNames = new string[popupCount];
             presetNames[0] = "-- Select --";
             for (int i = 0; i < _presets.Length; i++)
             {
-                presetNames[i + 1] = _presets[i] != null ? _presets[i].preset.name : "(Invalid)";
+                presetNames[i + 1] = _presets[i] != null ? _presets[i].name : "(Invalid)";
             }
 
+            // 绘制下拉框，选择后保持显示选中项名称（不重置 index）
             EditorGUI.BeginChangeCheck();
-            _selectedPresetIndex = EditorGUILayout.Popup(_selectedPresetIndex, presetNames, GUILayout.Height(25));
+            int newIndex = EditorGUILayout.Popup(_selectedPresetIndex, presetNames, GUILayout.Height(25));
             if (EditorGUI.EndChangeCheck())
             {
-                if (_selectedPresetIndex > 0)
+                _selectedPresetIndex = newIndex;
+                if (_selectedPresetIndex >= 1)
                 {
                     var preset = GetSelectedPreset();
                     if (preset != null)
@@ -88,66 +135,129 @@ namespace CelLookPostProcess
                         Undo.RecordObject(s, "Apply CelLook Preset");
                         preset.preset.ApplyTo(s);
                         EditorUtility.SetDirty(s);
+
+                        // 将保存名称同步为当前选中预设名，方便直接覆盖保存
+                        _newPresetName = preset.name;
                     }
                 }
-                _selectedPresetIndex = -1;
             }
 
             EditorGUILayout.BeginHorizontal();
+
+            // 删除按钮：删除当前选中预设
+            GUI.enabled = GetSelectedPreset() != null;
             if (GUILayout.Button("Delete Selected", GUILayout.Height(25)))
             {
                 var preset = GetSelectedPreset();
                 if (preset != null)
                 {
-                    string path = AssetDatabase.GetAssetPath(preset);
-                    AssetDatabase.DeleteAsset(path);
-                    LoadPresets();
-                    _selectedPresetIndex = -1;
+                    bool confirmed = EditorUtility.DisplayDialog(
+                        "Delete Preset",
+                        $"确定要删除预设 \"{preset.name}\" 吗？此操作不可撤销。",
+                        "删除", "取消");
+
+                    if (confirmed)
+                    {
+                        string path = AssetDatabase.GetAssetPath(preset);
+                        AssetDatabase.DeleteAsset(path);
+                        AssetDatabase.SaveAssets();
+                        _selectedPresetIndex = 0;
+                        LoadPresets();
+                        GUIUtility.ExitGUI();
+                        return;
+                    }
                 }
             }
+            GUI.enabled = true;
+
             if (GUILayout.Button("Refresh", GUILayout.Height(25)))
             {
                 LoadPresets();
                 GUIUtility.ExitGUI();
+                return;
             }
             EditorGUILayout.EndHorizontal();
 
             EditorGUILayout.Space(4);
 
-            EditorGUILayout.LabelField("Save Current as New Preset", EditorStyles.miniLabel);
+            EditorGUILayout.LabelField("Save Current Settings as Preset", EditorStyles.miniLabel);
 
             EditorGUILayout.BeginHorizontal();
             _newPresetName = EditorGUILayout.TextField(_newPresetName, GUILayout.Height(20));
             if (GUILayout.Button("Save", GUILayout.Width(60), GUILayout.Height(20)))
             {
-                SaveNewPreset();
+                SavePreset();
                 GUIUtility.ExitGUI();
+                return;
             }
             EditorGUILayout.EndHorizontal();
+
+            // 提示：若与已有预设同名，则会覆盖
+            var existingPreset = FindPresetByName(_newPresetName);
+            if (existingPreset != null)
+            {
+                EditorGUILayout.HelpBox($"将覆盖已有预设: {existingPreset.name}", MessageType.Warning);
+            }
         }
 
-        private void SaveNewPreset()
+        // 按 Asset 文件名查找预设（忽略大小写）
+        private CelLookPresetAsset FindPresetByName(string presetName)
         {
-            if (!AssetDatabase.IsValidFolder(PRESETS_FOLDER))
+            string sanitized = SanitizeFileName(presetName);
+            foreach (var preset in _presets)
             {
-                AssetDatabase.CreateFolder("Assets/CelLookPostProcess", "Presets");
+                if (preset != null && string.Equals(preset.name, sanitized, System.StringComparison.OrdinalIgnoreCase))
+                    return preset;
+            }
+            return null;
+        }
+
+        private void SavePreset()
+        {
+            if (!AssetDatabase.IsValidFolder(_presetsFolder))
+            {
+                _presetsFolder = FindPresetsFolder();
             }
 
-            var newPreset = ScriptableObject.CreateInstance<CelLookPresetAsset>();
-            newPreset.preset = new CelLookPreset();
             string presetName = string.IsNullOrEmpty(_newPresetName) ? "New Preset" : _newPresetName;
-            newPreset.preset.name = presetName;
+            string sanitizedName = SanitizeFileName(presetName);
+            string assetPath = _presetsFolder + "/" + sanitizedName + ".asset";
 
             var s = target as CelLookSettings;
-            newPreset.preset.LoadFrom(s);
 
-            string sanitizedName = SanitizeFileName(presetName);
-            string path = AssetDatabase.GenerateUniqueAssetPath(PRESETS_FOLDER + "/" + sanitizedName + ".asset");
-            AssetDatabase.CreateAsset(newPreset, path);
-            AssetDatabase.SaveAssets();
+            // 检查是否已存在同名预设，存在则覆盖
+            var existingAsset = AssetDatabase.LoadAssetAtPath<CelLookPresetAsset>(assetPath);
+            if (existingAsset != null)
+            {
+                Undo.RecordObject(existingAsset, "Overwrite CelLook Preset");
+                existingAsset.preset.name = presetName;
+                existingAsset.preset.LoadFrom(s);
+                EditorUtility.SetDirty(existingAsset);
+                AssetDatabase.SaveAssets();
+            }
+            else
+            {
+                // 创建新预设
+                var newPreset = ScriptableObject.CreateInstance<CelLookPresetAsset>();
+                newPreset.preset = new CelLookPreset();
+                newPreset.preset.name = presetName;
+                newPreset.preset.LoadFrom(s);
+
+                AssetDatabase.CreateAsset(newPreset, assetPath);
+                AssetDatabase.SaveAssets();
+            }
 
             LoadPresets();
-            _newPresetName = "My Preset";
+
+            // 保存后自动选中该预设
+            for (int i = 0; i < _presets.Length; i++)
+            {
+                if (_presets[i] != null && string.Equals(_presets[i].name, sanitizedName, System.StringComparison.OrdinalIgnoreCase))
+                {
+                    _selectedPresetIndex = i + 1;
+                    break;
+                }
+            }
         }
 
         private string SanitizeFileName(string name)

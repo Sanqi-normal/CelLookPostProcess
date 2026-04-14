@@ -1,20 +1,16 @@
+// CelLookPostProcess.shader
+
 Shader "Hidden/CelLookPostProcess"
 {
     Properties
     {
         _MainTex ("Screen Texture", 2D) = "white" {}
         
-        // --- 剪影风格新增属性 ---
-        [Toggle] _EnableSilhouette ("Enable Silhouette Mode", Float) = 0
-        _SilhouetteShadowColor ("Silhouette Shadow", Color) = (0.1, 0.1, 0.2, 1)
-        _SilhouetteMidColor ("Silhouette Midtone", Color) = (0.4, 0.2, 0.5, 1)
-        _SilhouetteHighColor ("Silhouette Highlight", Color) = (0.9, 0.4, 0.6, 1)
-        _SilhouetteThreshold1 ("Silhouette Threshold 1", Range(0, 1)) = 0.3
-        _SilhouetteThreshold2 ("Silhouette Threshold 2", Range(0, 1)) = 0.7
-
-        // --- 像素化风格新增属性 ---
-        [Toggle] _EnablePixelate ("Enable Pixelate Mode", Float) = 0
-        _PixelSize ("Pixel Block Size", Range(1, 32)) = 4
+        _StencilRef ("Stencil Reference", Int) = 1
+        [Enum(UnityEngine.Rendering.CompareFunction)] _StencilComp ("Stencil Comparison", Int) = 8
+        
+        _UseRampMap ("Use Ramp Map", Float) = 0
+        _RampMap ("Ramp Map", 2D) = "white" {}
     }
 
     SubShader
@@ -22,25 +18,42 @@ Shader "Hidden/CelLookPostProcess"
         Tags { "RenderType" = "Opaque" "RenderPipeline" = "UniversalPipeline" }
         ZWrite Off ZTest Always Cull Off
 
+        Stencil
+        {
+            Ref [_StencilRef]
+            Comp [_StencilComp]
+            Pass Keep
+        }
+
         HLSLINCLUDE
         #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
         #include "Packages/com.unity.render-pipelines.core/Runtime/Utilities/Blit.hlsl"
+        #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/DeclareDepthTexture.hlsl"
+        #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/DeclareNormalsTexture.hlsl"
 
         float  _EffectIntensity;
         int    _KuwaharaRadius;
+        
+        float  _UseRampMap;
+        TEXTURE2D(_RampMap);
+        SAMPLER(sampler_RampMap);
+
         float  _Saturation;
         float  _Contrast;
         float  _Brightness;
         float  _ShadowHueShift;
         float  _ShadowSatBoost;
         float  _ShadowThreshold;
+        float  _ShadowSmoothness;
         float  _ShadowDarken;
+        
         float  _LineThickness;
         float  _DepthThreshold;
         float  _NormalThreshold;
         float4 _LineColor;
         float  _LineIntensity;
         float  _DepthFalloff;
+        
         float  _FinalSaturation;
         float  _FinalContrast;
         float4 _ShadowTint;
@@ -48,7 +61,6 @@ Shader "Hidden/CelLookPostProcess"
         float  _ShadowInfluence;
         float  _HighlightInfluence;
         
-        // 剪影模式变量
         float  _EnableSilhouette;
         float4 _SilhouetteShadowColor;
         float4 _SilhouetteMidColor;
@@ -56,26 +68,35 @@ Shader "Hidden/CelLookPostProcess"
         float  _SilhouetteThreshold1;
         float  _SilhouetteThreshold2;
 
-        // 像素化模式变量
         float  _EnablePixelate;
         float  _PixelSize;
+
+        float  _EnableRetroCRT;
+        float  _CRTCurve;
+        float  _ChromaticAberration;
+        float  _ScanlineCount;
+        float  _ScanlineIntensity;
+        float  _VignetteIntensity;
+
+        int    _PatternType;
+        float  _PatternScale;
+        float  _PatternAngle;
+        float  _PatternIntensity;
+        float4 _PatternColor;
+        float  _PatternLumaThreshold;
         
         TEXTURE2D_X(_OriginalCameraTex);
 
-        // ---------- 像素化 UV 坐标处理 ----------
         float2 GetPixelatedUV(float2 uv)
         {
             if (_EnablePixelate > 0.5)
             {
-                // 基于屏幕分辨率和设定的像素块大小计算网格分辨率
                 float2 pixelRes = _ScreenParams.xy / max(1.0, _PixelSize);
-                // 加上 0.5 以确保采样点落在像素块中心，避免 LinearClamp 引起的边缘模糊
                 return (floor(uv * pixelRes) + 0.5) / pixelRes;
             }
             return uv;
         }
 
-        // ---------- 颜色空间转换 ----------
         float3 RGBtoHSV(float3 rgb)
         {
             float4 K = float4(0.0, -1.0/3.0, 2.0/3.0, -1.0);
@@ -92,15 +113,43 @@ Shader "Hidden/CelLookPostProcess"
             float3 p = abs(frac(hsv.xxx + K.xyz) * 6.0 - K.www);
             return hsv.z * lerp(K.xxx, saturate(p - K.xxx), hsv.y);
         }
+
+        float2x2 GetRotationMatrix(float angle)
+        {
+            float s = sin(angle);
+            float c = cos(angle);
+            return float2x2(c, -s, s, c);
+        }
+
+        float RobertsCrossDepth(float2 uv, float2 ts)
+        {
+            float d00 = LinearEyeDepth(SampleSceneDepth(uv), _ZBufferParams);
+            float d11 = LinearEyeDepth(SampleSceneDepth(uv + ts), _ZBufferParams);
+            float d10 = LinearEyeDepth(SampleSceneDepth(uv + float2(ts.x, 0)), _ZBufferParams);
+            float d01 = LinearEyeDepth(SampleSceneDepth(uv + float2(0, ts.y)), _ZBufferParams);
+            
+            float baseDepth = max(d00, 0.001);
+            float diff1 = abs(d11 - d00) / baseDepth;
+            float diff2 = abs(d10 - d01) / baseDepth;
+            
+            return sqrt(diff1 * diff1 + diff2 * diff2);
+        }
+
+        float RobertsCrossNormal(float2 uv, float2 ts)
+        {
+            float3 n00 = SampleSceneNormals(uv);
+            float3 n11 = SampleSceneNormals(uv + ts);
+            float3 n10 = SampleSceneNormals(uv + float2(ts.x, 0));
+            float3 n01 = SampleSceneNormals(uv + float2(0, ts.y));
+            float3 g0 = n11 - n00;
+            float3 g1 = n10 - n01;
+            return sqrt(dot(g0, g0) + dot(g1, g1));
+        }
         ENDHLSL
 
-        // ============================================================
-        // Pass 0: Kuwahara Filter (平滑去噪点，保留硬边缘)
-        // ============================================================
         Pass
         {
             Name "FlattenKuwahara"
-
             HLSLPROGRAM
             #pragma vertex Vert
             #pragma fragment FragKuwahara
@@ -129,16 +178,14 @@ Shader "Hidden/CelLookPostProcess"
 
             half4 FragKuwahara(Varyings input) : SV_Target
             {
-                float2 uv = GetPixelatedUV(input.texcoord);
-                
+                // Kuwahara 在原始分辨率上操作，与像素化无关。
+                // 像素化（PixelSize）只影响 Uber pass 的颜色采样 UV，
+                // 不应在此处混入，否则 Kuwahara 窗口会错位/跨格。
+                float2 uv = input.texcoord;
                 if (_KuwaharaRadius <= 0) 
                     return SAMPLE_TEXTURE2D_X(_BlitTexture, sampler_LinearClamp, uv);
                 
                 float2 ts = 1.0 / _ScreenParams.xy;
-                // 如果开启了像素化，扩大 Kuwahara 采样步长，确保跨像素块比较方差
-                if (_EnablePixelate > 0.5) 
-                    ts *= max(1.0, _PixelSize);
-
                 int r = _KuwaharaRadius;
                 
                 float4 m0 = GetMeanAndVariance(uv, ts, int2(-1, -1), r);
@@ -157,156 +204,158 @@ Shader "Hidden/CelLookPostProcess"
             ENDHLSL
         }
 
-        // ============================================================
-        // Pass 1: Strict Two-Tone Binarization / Silhouette Mapping
-        // ============================================================
         Pass
         {
-            Name "ColorBinarization"
-
+            Name "UberNPRPass"
             HLSLPROGRAM
             #pragma vertex Vert
-            #pragma fragment FragColorBin
+            #pragma fragment FragUber
 
-            half4 FragColorBin(Varyings input) : SV_Target
+            half4 FragUber(Varyings input) : SV_Target
             {
-                float2 uv = GetPixelatedUV(input.texcoord);
-                half4 col = SAMPLE_TEXTURE2D_X(_BlitTexture, sampler_LinearClamp, uv);
-                
-                // 预处理对比度
-                col.rgb = (col.rgb - 0.5) * _Contrast + 0.5 + _Brightness;
-                col.rgb = clamp(col.rgb, 0.001, 1.0);
+                float2 uv = input.texcoord;
+                float2 pixelatedUV = uv;
 
-                if (_EnableSilhouette > 0.5)
+                if (_EnableRetroCRT > 0.5)
                 {
-                    // --- 剪影风格映射逻辑 ---
-                    float lum = dot(col.rgb, float3(0.299, 0.587, 0.114));
-                    float3 silCol = _SilhouetteShadowColor.rgb;
-                    silCol = lerp(silCol, _SilhouetteMidColor.rgb, step(_SilhouetteThreshold1, lum));
-                    silCol = lerp(silCol, _SilhouetteHighColor.rgb, step(_SilhouetteThreshold2, lum));
-                    
-                    return half4(silCol, 1.0);
+                    uv = uv * 2.0 - 1.0;
+                    float2 offset = abs(uv.yx) / float2(_CRTCurve, _CRTCurve);
+                    uv = uv + uv * offset * offset;
+                    uv = uv * 0.5 + 0.5;
+                    pixelatedUV = uv;
+                    if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) return half4(0, 0, 0, 1);
+                }
+
+                // 像素化 UV：颜色采样吸附到像素格，描边/深度/法线采样保留原始 uv。
+                // 两条路径分开，PixelSize 不会影响边缘检测偏移。
+                float2 colorUV = GetPixelatedUV(pixelatedUV);
+
+                half4 col = half4(0, 0, 0, 1);
+                if (_EnableRetroCRT > 0.5)
+                {
+                    float r = SAMPLE_TEXTURE2D_X(_BlitTexture, sampler_LinearClamp, colorUV + float2(_ChromaticAberration, 0)).r;
+                    float g = SAMPLE_TEXTURE2D_X(_BlitTexture, sampler_LinearClamp, colorUV).g;
+                    float b = SAMPLE_TEXTURE2D_X(_BlitTexture, sampler_LinearClamp, colorUV - float2(_ChromaticAberration, 0)).b;
+                    col = half4(r, g, b, 1.0);
                 }
                 else
                 {
-                    // --- 原有严格二分逻辑 ---
-                    float3 hsv = RGBtoHSV(col.rgb);
-                    float isShadow = step(hsv.z, _ShadowThreshold);
-                    float isLight = 1.0 - isShadow;
-
-                    float3 shadowHSV = hsv;
-                    shadowHSV.x = frac(shadowHSV.x + _ShadowHueShift);
-                    shadowHSV.y = saturate(shadowHSV.y * (1.0 + _ShadowSatBoost));
-                    shadowHSV.z = shadowHSV.z * _ShadowDarken;
-
-                    float3 lightHSV = hsv;
-                    lightHSV.y = saturate(lightHSV.y * _Saturation);
-
-                    hsv = shadowHSV * isShadow + lightHSV * isLight;
-                    col.rgb = HSVtoRGB(hsv);
-
-                    return half4(col.rgb, 1.0);
+                    col = SAMPLE_TEXTURE2D_X(_BlitTexture, sampler_LinearClamp, colorUV);
                 }
-            }
-            ENDHLSL
-        }
 
-        // ============================================================
-        // Pass 2: Manga Line Art (附带天空盒剔除)
-        // ============================================================
-        Pass
-        {
-            Name "MangaLineArt"
+                col.rgb = (col.rgb - 0.5) * _Contrast + 0.5 + _Brightness;
+                col.rgb = clamp(col.rgb, 0.001, 1.0);
 
-            HLSLPROGRAM
-            #pragma vertex Vert
-            #pragma fragment FragLineArt
+                float rawLuma = dot(col.rgb, float3(0.299, 0.587, 0.114));
 
-            #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/DeclareDepthTexture.hlsl"
-            #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/DeclareNormalsTexture.hlsl"
+                if (_EnableSilhouette > 0.5)
+                {
+                    float3 silCol = _SilhouetteShadowColor.rgb;
+                    silCol = lerp(silCol, _SilhouetteMidColor.rgb, step(_SilhouetteThreshold1, rawLuma));
+                    silCol = lerp(silCol, _SilhouetteHighColor.rgb, step(_SilhouetteThreshold2, rawLuma));
+                    col.rgb = silCol;
+                }
+                else
+                {
+                    if (_UseRampMap > 0.5)
+                    {
+                        col.rgb *= SAMPLE_TEXTURE2D(_RampMap, sampler_RampMap, float2(rawLuma, 0.5)).rgb;
+                    }
+                    else
+                    {
+                        float3 hsv = RGBtoHSV(col.rgb);
+                        float isShadow = 1.0 - smoothstep(_ShadowThreshold - _ShadowSmoothness, _ShadowThreshold + _ShadowSmoothness, hsv.z);
+                        float isLight = 1.0 - isShadow;
 
-            float RobertsCrossDepth(float2 uv, float2 ts)
-            {
-                float d00 = LinearEyeDepth(SampleSceneDepth(uv), _ZBufferParams);
-                float d11 = LinearEyeDepth(SampleSceneDepth(uv + ts), _ZBufferParams);
-                float d10 = LinearEyeDepth(SampleSceneDepth(uv + float2(ts.x, 0)), _ZBufferParams);
-                float d01 = LinearEyeDepth(SampleSceneDepth(uv + float2(0, ts.y)), _ZBufferParams);
-                return sqrt(pow(d11 - d00, 2) + pow(d10 - d01, 2));
-            }
+                        float3 shadowHSV = hsv;
+                        shadowHSV.x = frac(shadowHSV.x + _ShadowHueShift);
+                        shadowHSV.y = saturate(shadowHSV.y * (1.0 + _ShadowSatBoost));
+                        shadowHSV.z = shadowHSV.z * _ShadowDarken;
 
-            float RobertsCrossNormal(float2 uv, float2 ts)
-            {
-                float3 n00 = SampleSceneNormals(uv);
-                float3 n11 = SampleSceneNormals(uv + ts);
-                float3 n10 = SampleSceneNormals(uv + float2(ts.x, 0));
-                float3 n01 = SampleSceneNormals(uv + float2(0, ts.y));
-                float3 g0 = n11 - n00;
-                float3 g1 = n10 - n01;
-                return sqrt(dot(g0, g0) + dot(g1, g1));
-            }
+                        float3 lightHSV = hsv;
+                        lightHSV.y = saturate(lightHSV.y * _Saturation);
 
-            half4 FragLineArt(Varyings input) : SV_Target
-            {
-                float2 uv = GetPixelatedUV(input.texcoord);
-                half4 baseCol = SAMPLE_TEXTURE2D_X(_BlitTexture, sampler_LinearClamp, uv);
-
-                float rawDepth = SampleSceneDepth(uv);
-                #if defined(UNITY_REVERSED_Z)
-                    if (rawDepth < 0.000001) return baseCol;
-                #else
-                    if (rawDepth > 0.999999) return baseCol;
-                #endif
-
-                float2 ts = _LineThickness / _ScreenParams.xy;
-                // 如果开启了像素化，同步放大边缘检测采样的跨度，否则线条会细碎断裂
-                if (_EnablePixelate > 0.5) 
-                    ts *= max(1.0, _PixelSize);
-
-                float depthEdge = RobertsCrossDepth(uv, ts);
-                float normalEdge = RobertsCrossNormal(uv, ts);
-
-                float edge = saturate(step(_DepthThreshold, depthEdge) + step(_NormalThreshold, normalEdge));
-                float sceneDepth = LinearEyeDepth(rawDepth, _ZBufferParams);
-                float fade = saturate(1.0 - sceneDepth / max(_DepthFalloff, 0.001));
-                edge *= lerp(1.0, fade, step(0.01, _DepthFalloff));
-                
-                return lerp(baseCol, half4(_LineColor.rgb, 1.0), edge * _LineIntensity);
-            }
-            ENDHLSL
-        }
-
-        // ============================================================
-        // Pass 3: Final Grading & Intensity Blend
-        // ============================================================
-        Pass
-        {
-            Name "PopColorGrading"
-
-            HLSLPROGRAM
-            #pragma vertex Vert
-            #pragma fragment FragColorGrade
-
-            half4 FragColorGrade(Varyings input) : SV_Target
-            {
-                float2 uv = GetPixelatedUV(input.texcoord);
-                half4 col = SAMPLE_TEXTURE2D_X(_BlitTexture, sampler_LinearClamp, uv);
-
-                float lum = dot(col.rgb, float3(0.299, 0.587, 0.114));
-                float shadowW = saturate(1.0 - lum * 2.5);
-                float highlightW = saturate((lum - 0.6) * 2.5);
-                
-                col.rgb += _ShadowTint.rgb * _ShadowInfluence * shadowW;
-                col.rgb += _HighlightTint.rgb * _HighlightInfluence * highlightW;
-                col.rgb = saturate(col.rgb);
-                
-                col.rgb = saturate((col.rgb - 0.5) * _FinalContrast + 0.5);
+                        hsv = shadowHSV * isShadow + lightHSV * isLight;
+                        col.rgb = HSVtoRGB(hsv);
+                    }
+                }
 
                 float lumFinal = dot(col.rgb, float3(0.299, 0.587, 0.114));
+                float shadowW = saturate(1.0 - lumFinal * 2.5);
+                float highlightW = saturate((lumFinal - 0.6) * 2.5);
+                col.rgb += _ShadowTint.rgb * _ShadowInfluence * shadowW;
+                col.rgb += _HighlightTint.rgb * _HighlightInfluence * highlightW;
+                col.rgb = saturate((col.rgb - 0.5) * _FinalContrast + 0.5);
+                
+                lumFinal = dot(col.rgb, float3(0.299, 0.587, 0.114));
                 col.rgb = saturate(lerp(float3(lumFinal, lumFinal, lumFinal), col.rgb, _FinalSaturation));
 
-                // 此处混合也使用量化后的 UV，保证不受到高分辨率底图的影响
+                if (_PatternType > 0)
+                {
+                    float2 screenAspect = float2(_ScreenParams.x / _ScreenParams.y, 1.0);
+                    float2 patternUV = pixelatedUV * screenAspect * _PatternScale * 50.0;
+                    patternUV = mul(GetRotationMatrix(_PatternAngle), patternUV);
+                    
+                    float isShape = 0.0;
+
+                    if (_PatternType == 1)
+                    {
+                        float2 grid = frac(patternUV) - 0.5;
+                        float dist = length(grid);
+                        float radius = saturate(1.0 - lumFinal) * 0.7;
+                        isShape = 1.0 - step(radius, dist);
+                    }
+                    else if (_PatternType == 2)
+                    {
+                        float lineGradient = frac(patternUV.x);
+                        float thickness = saturate(1.0 - lumFinal) * 0.8;
+                        isShape = 1.0 - step(thickness, lineGradient);
+                    }
+
+                    float patternMask = isShape * (1.0 - smoothstep(_PatternLumaThreshold - 0.05, _PatternLumaThreshold + 0.05, lumFinal)) * _PatternIntensity;
+                    col.rgb = lerp(col.rgb, _PatternColor.rgb, patternMask);
+                }
+
+                if (_LineIntensity > 0.0)
+                {
+                    float rawDepth = SampleSceneDepth(uv);
+                    
+                    #if defined(UNITY_REVERSED_Z)
+                    bool isSky = rawDepth < 0.000001;
+                    #else
+                    bool isSky = rawDepth > 0.999999;
+                    #endif
+
+                    if (!isSky)
+                    {
+                        // 描边检测步长始终为 1 个屏幕原始像素，不受 PixelSize 影响。
+                        // PixelSize 只控制颜色 UV 的吸附，不应放大梯度采样偏移，
+                        // 否则未开启 Kuwahara 时仅调 PixelSize 也会导致描边错位。
+                        float2 ts = _LineThickness / _ScreenParams.xy;
+                        
+                        float depthEdge = RobertsCrossDepth(uv, ts);
+                        float normalEdge = RobertsCrossNormal(uv, ts);
+
+                        float edge = saturate(step(_DepthThreshold, depthEdge) + step(_NormalThreshold, normalEdge));
+                        float sceneDepth = LinearEyeDepth(rawDepth, _ZBufferParams);
+                        float fade = saturate(1.0 - sceneDepth / max(_DepthFalloff, 0.001));
+                        edge *= lerp(1.0, fade, step(0.01, _DepthFalloff));
+                        
+                        col.rgb = lerp(col.rgb, _LineColor.rgb, edge * _LineIntensity);
+                    }
+                }
+
+                if (_EnableRetroCRT > 0.5)
+                {
+                    float scanline = sin(uv.y * _ScanlineCount * 3.14159) * 0.5 + 0.5;
+                    col.rgb -= (1.0 - scanline) * _ScanlineIntensity;
+                    float2 vUV = uv * (1.0 - uv.yx);
+                    float vig = pow(vUV.x * vUV.y * 15.0, _VignetteIntensity);
+                    col.rgb *= saturate(vig);
+                }
+
                 half4 original = SAMPLE_TEXTURE2D_X(_OriginalCameraTex, sampler_LinearClamp, uv);
-                return half4(lerp(original.rgb, col.rgb, _EffectIntensity), original.a);
+                return half4(lerp(original.rgb, col.rgb, _EffectIntensity), 1.0);
             }
             ENDHLSL
         }

@@ -10,10 +10,10 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 02d1f93b254ba7549b922e02d0e21b69, type: 3}
-  m_Name: "\u84DD\u9EC4\u526A\u5F71"
+  m_Name: "\u7EA2\u767D\u526A\u5F71"
   m_EditorClassIdentifier: 
   preset:
-    name: "\u84DD\u9EC4\u526A\u5F71"
+    name: "\u7EA2\u767D\u526A\u5F71"
     effectIntensity: 1
     enableStencil: 0
     stencilRef: 1
@@ -28,12 +28,12 @@ MonoBehaviour:
     shadowHueShift: 0.03
     shadowSatBoost: 0.15
     shadowDarken: 0.7
-    lineIntensity: 0
+    lineIntensity: 0.8
     lineThickness: 1.2
     depthThreshold: 0.015
     normalThreshold: 0.3
     lineColor: {r: 0.05, g: 0.04, b: 0.08, a: 1}
-    depthFalloff: 0
+    depthFalloff: 40
     finalSaturation: 1.61
     finalContrast: 1.05
     shadowTint: {r: 0, g: 0, b: 0.04, a: 1}
@@ -41,11 +41,11 @@ MonoBehaviour:
     shadowInfluence: 0.507
     highlightInfluence: 0.2
     enableSilhouette: 1
-    silhouetteShadowColor: {r: 0, g: 0.032694325, b: 0.11949676, a: 1}
-    silhouetteMidColor: {r: 1, g: 1, b: 1, a: 1}
-    silhouetteHighColor: {r: 1, g: 0.92407906, b: 0.71383643, a: 1}
-    silhouetteThreshold1: 0.276
-    silhouetteThreshold2: 0.282
+    silhouetteShadowColor: {r: 0, g: 0, b: 0, a: 1}
+    silhouetteMidColor: {r: 1, g: 0, b: 0, a: 1}
+    silhouetteHighColor: {r: 1, g: 1, b: 1, a: 1}
+    silhouetteThreshold1: 0.209
+    silhouetteThreshold2: 0.272
     enablePixelate: 0
     pixelSize: 4
     patternType: 0
