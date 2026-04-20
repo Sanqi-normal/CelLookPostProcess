@@ -10,11 +10,11 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 02d1f93b254ba7549b922e02d0e21b69, type: 3}
-  m_Name: "\u7A7A"
+  m_Name: "\u84B8\u6C7D\u6CE2"
   m_EditorClassIdentifier: 
   preset:
-    name: "\u7A7A"
-    effectIntensity: 0
+    name: "\u84B8\u6C7D\u6CE2"
+    effectIntensity: 1
     enableStencil: 0
     stencilRef: 1
     preFilterMode: 0
@@ -25,8 +25,8 @@ MonoBehaviour:
     rampMap: {fileID: 0}
     celSteps: 2
     celStepSmoothness: 0.02
-    saturation: 1.1
-    contrast: 1.04
+    saturation: 1.25
+    contrast: 0.93
     brightness: 0.1
     shadowThreshold: 0.45
     shadowSmoothness: 0.05
@@ -34,13 +34,13 @@ MonoBehaviour:
     shadowSatBoost: 0.15
     shadowDarken: 0.7
     lineIntensity: 1
-    lineThickness: 1.84
+    lineThickness: 1.76
     depthThreshold: 0.5
     normalThreshold: 1.5
     colorThreshold: 0.2
     lineColor: {r: 0, g: 0, b: 0, a: 1}
-    depthFalloff: 9.7
-    finalSaturation: 3
+    depthFalloff: 2.9
+    finalSaturation: 1.81
     finalContrast: 1.05
     shadowTint: {r: 0, g: 0, b: 0.04, a: 1}
     highlightTint: {r: 0.04, g: 0.02, b: 0, a: 1}
@@ -53,20 +53,20 @@ MonoBehaviour:
     silhouetteThreshold1: 0.206
     silhouetteThreshold2: 0.879
     enablePixelate: 0
-    pixelSize: 4
+    pixelSize: 2
     patternType: 0
-    patternScale: 10
-    patternAngle: 0.785398
+    patternScale: 31.1
+    patternAngle: 2.26
     patternIntensity: 0.8
-    patternColor: {r: 0.1, g: 0.1, b: 0.1, a: 1}
-    patternLumaThreshold: 0.5
-    enableRetroCRT: 0
-    crtCurve: 3.5
-    chromaticAberration: 0.005
-    scanlineCount: 600
-    scanlineIntensity: 0.3
-    vignetteIntensity: 1.5
-    enableVaporwave: 0
+    patternColor: {r: 0, g: 0, b: 0, a: 1}
+    patternLumaThreshold: 0
+    enableRetroCRT: 1
+    crtCurve: 5.66
+    chromaticAberration: 0.0016
+    scanlineCount: 389
+    scanlineIntensity: 0.08
+    vignetteIntensity: 0.53
+    enableVaporwave: 1
     noiseTex: {fileID: 0}
     glitchFrequency: 0.5
     glitchSpeed: 1

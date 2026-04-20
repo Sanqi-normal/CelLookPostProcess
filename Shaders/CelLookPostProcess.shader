@@ -5,11 +5,11 @@ Shader "Hidden/CelLookPostProcess"
     Properties
     {
         _MainTex ("Screen Texture", 2D) = "white" {}
+        _NoiseTex ("Noise Texture", 2D) = "white" {}
         
         _StencilRef ("Stencil Reference", Int) = 1
         [Enum(UnityEngine.Rendering.CompareFunction)] _StencilComp ("Stencil Comparison", Int) = 8
         
-        _UseRampMap ("Use Ramp Map", Float) = 0
         _RampMap ("Ramp Map", 2D) = "white" {}
     }
 
@@ -32,11 +32,25 @@ Shader "Hidden/CelLookPostProcess"
         #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/DeclareNormalsTexture.hlsl"
 
         float  _EffectIntensity;
-        int    _KuwaharaRadius;
         
-        float  _UseRampMap;
+        // Filter params
+        int    _KuwaharaRadius;
+        float  _BilateralColorSigma;
+        float  _BilateralSpatialSigma;
+        
+        // Style params
+        float  _GlitchFrequency;
+        float  _GlitchSpeed;
+        float  _GlitchIntensity;
+        float  _FilmGrainIntensity;
+        TEXTURE2D(_NoiseTex);
+        SAMPLER(sampler_NoiseTex);
+
         TEXTURE2D(_RampMap);
         SAMPLER(sampler_RampMap);
+
+        int    _CelSteps;
+        float  _CelStepSmoothness;
 
         float  _Saturation;
         float  _Contrast;
@@ -50,6 +64,7 @@ Shader "Hidden/CelLookPostProcess"
         float  _LineThickness;
         float  _DepthThreshold;
         float  _NormalThreshold;
+        float  _ColorThreshold;
         float4 _LineColor;
         float  _LineIntensity;
         float  _DepthFalloff;
@@ -57,21 +72,15 @@ Shader "Hidden/CelLookPostProcess"
         float  _FinalSaturation;
         float  _FinalContrast;
         float4 _ShadowTint;
-        float4 _HighlightTint;
         float  _ShadowInfluence;
-        float  _HighlightInfluence;
         
-        float  _EnableSilhouette;
         float4 _SilhouetteShadowColor;
         float4 _SilhouetteMidColor;
         float4 _SilhouetteHighColor;
         float  _SilhouetteThreshold1;
         float  _SilhouetteThreshold2;
 
-        float  _EnablePixelate;
         float  _PixelSize;
-
-        float  _EnableRetroCRT;
         float  _CRTCurve;
         float  _ChromaticAberration;
         float  _ScanlineCount;
@@ -89,12 +98,12 @@ Shader "Hidden/CelLookPostProcess"
 
         float2 GetPixelatedUV(float2 uv)
         {
-            if (_EnablePixelate > 0.5)
-            {
-                float2 pixelRes = _ScreenParams.xy / max(1.0, _PixelSize);
-                return (floor(uv * pixelRes) + 0.5) / pixelRes;
-            }
+            #if defined(_ENABLE_PIXELATE)
+            float2 pixelRes = _ScreenParams.xy / max(1.0, _PixelSize);
+            return (floor(uv * pixelRes) + 0.5) / pixelRes;
+            #else
             return uv;
+            #endif
         }
 
         float3 RGBtoHSV(float3 rgb)
@@ -145,8 +154,20 @@ Shader "Hidden/CelLookPostProcess"
             float3 g1 = n10 - n01;
             return sqrt(dot(g0, g0) + dot(g1, g1));
         }
+
+        float RobertsCrossLuma(float2 uv, float2 ts)
+        {
+            float l00 = dot(SAMPLE_TEXTURE2D_X(_OriginalCameraTex, sampler_LinearClamp, uv).rgb, float3(0.299, 0.587, 0.114));
+            float l11 = dot(SAMPLE_TEXTURE2D_X(_OriginalCameraTex, sampler_LinearClamp, uv + ts).rgb, float3(0.299, 0.587, 0.114));
+            float l10 = dot(SAMPLE_TEXTURE2D_X(_OriginalCameraTex, sampler_LinearClamp, uv + float2(ts.x, 0)).rgb, float3(0.299, 0.587, 0.114));
+            float l01 = dot(SAMPLE_TEXTURE2D_X(_OriginalCameraTex, sampler_LinearClamp, uv + float2(0, ts.y)).rgb, float3(0.299, 0.587, 0.114));
+            float d1 = l11 - l00;
+            float d2 = l10 - l01;
+            return sqrt(d1 * d1 + d2 * d2);
+        }
         ENDHLSL
 
+        // PASS 0: Kuwahara Filter
         Pass
         {
             Name "FlattenKuwahara"
@@ -178,9 +199,6 @@ Shader "Hidden/CelLookPostProcess"
 
             half4 FragKuwahara(Varyings input) : SV_Target
             {
-                // Kuwahara 在原始分辨率上操作，与像素化无关。
-                // 像素化（PixelSize）只影响 Uber pass 的颜色采样 UV，
-                // 不应在此处混入，否则 Kuwahara 窗口会错位/跨格。
                 float2 uv = input.texcoord;
                 if (_KuwaharaRadius <= 0) 
                     return SAMPLE_TEXTURE2D_X(_BlitTexture, sampler_LinearClamp, uv);
@@ -204,6 +222,55 @@ Shader "Hidden/CelLookPostProcess"
             ENDHLSL
         }
 
+        // PASS 1: Bilateral Filter (Edge-Preserving Blur)
+        Pass
+        {
+            Name "FlattenBilateral"
+            HLSLPROGRAM
+            #pragma vertex Vert
+            #pragma fragment FragBilateral
+
+            half4 FragBilateral(Varyings input) : SV_Target
+            {
+                float2 uv = input.texcoord;
+                float2 ts = 1.0 / _ScreenParams.xy;
+                
+                int r = 4;
+                
+                float3 centerCol = SAMPLE_TEXTURE2D_X(_BlitTexture, sampler_LinearClamp, uv).rgb;
+                float3 num = 0.0;
+                float weightSum = 0.0;
+
+                // Max to prevent division by zero errors
+                float spatialDenom = 2.0 * max(_BilateralSpatialSigma, 0.001) * max(_BilateralSpatialSigma, 0.001);
+                float colorDenom = 2.0 * max(_BilateralColorSigma, 0.001) * max(_BilateralColorSigma, 0.001);
+
+                for(int x = -r; x <= r; x++)
+                {
+                    for(int y = -r; y <= r; y++)
+                    {
+                        float2 offset = float2(x, y);
+                        float2 sampleUV = uv + offset * ts;
+                        float3 col = SAMPLE_TEXTURE2D_X(_BlitTexture, sampler_LinearClamp, sampleUV).rgb;
+                        
+                        float spatialDist2 = dot(offset, offset);
+                        float spatialWeight = exp(-spatialDist2 / spatialDenom);
+                        
+                        float3 colorDiff = col - centerCol;
+                        float colorDist2 = dot(colorDiff, colorDiff);
+                        float colorWeight = exp(-colorDist2 / colorDenom);
+                        
+                        float w = spatialWeight * colorWeight;
+                        num += col * w;
+                        weightSum += w;
+                    }
+                }
+                return half4(num / max(weightSum, 0.001), 1.0);
+            }
+            ENDHLSL
+        }
+
+        // PASS 2: Uber NPR Pass
         Pass
         {
             Name "UberNPRPass"
@@ -211,111 +278,198 @@ Shader "Hidden/CelLookPostProcess"
             #pragma vertex Vert
             #pragma fragment FragUber
 
+            #pragma multi_compile_local _ _ENABLE_COLOR_MAPPING
+            #pragma multi_compile_local _ _ENABLE_MANGA_LINES
+            #pragma multi_compile_local _ _ENABLE_COLOR_GRADING
+
+            #pragma multi_compile_local _ _ENABLE_VAPORWAVE
+            #pragma multi_compile_local _ _ENABLE_RETRO_CRT
+            #pragma multi_compile_local _ _ENABLE_PIXELATE
+            #pragma multi_compile_local _ _ENABLE_SILHOUETTE
+            #pragma multi_compile_local _ _USE_RAMP_MAP
+            #pragma multi_compile_local _ _ENABLE_COMIC_PATTERN
+
             half4 FragUber(Varyings input) : SV_Target
             {
                 float2 uv = input.texcoord;
                 float2 pixelatedUV = uv;
 
-                if (_EnableRetroCRT > 0.5)
+                #if defined(_ENABLE_RETRO_CRT)
+                uv = uv * 2.0 - 1.0;
+                float2 offset = abs(uv.yx) / max(float2(_CRTCurve, _CRTCurve), 0.001);
+                uv = uv + uv * offset * offset;
+                uv = uv * 0.5 + 0.5;
+                pixelatedUV = uv;
+                if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) return half4(0, 0, 0, 1);
+                #endif
+
+                float2 colorUV = GetPixelatedUV(pixelatedUV);
+                half4 col = half4(0, 0, 0, 1);
+
+                #if defined(_ENABLE_VAPORWAVE)
+                float time = _Time.y * _GlitchSpeed;
+                float2 glitchUV = colorUV;
+                
+                float blockY = floor(colorUV.y * 12.0 - time * 0.5); 
+                float blockTrigger = frac(sin(dot(float2(blockY, floor(time * 2.0)), float2(12.9898, 78.233))) * 43758.5453);
+                float dynamicCA = 0.0;
+                float blockThreshold = 1.0 - (_GlitchFrequency * 0.15);
+
+                if (blockTrigger > blockThreshold)
                 {
-                    uv = uv * 2.0 - 1.0;
-                    float2 offset = abs(uv.yx) / float2(_CRTCurve, _CRTCurve);
-                    uv = uv + uv * offset * offset;
-                    uv = uv * 0.5 + 0.5;
-                    pixelatedUV = uv;
-                    if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) return half4(0, 0, 0, 1);
+                    float glitchOffset = (frac(sin(blockY * 12.34) * 43758.5453) - 0.5) * 2.0;
+                    glitchUV.x += glitchOffset * _GlitchIntensity;
+                    dynamicCA = abs(glitchOffset) * _GlitchIntensity * 0.5;
+                }
+                
+                float tearTrigger = frac(sin(dot(float2(floor(colorUV.y * 150.0), floor(time * 5.0)), float2(12.9898, 78.233))) * 43758.5453);
+                float tearThreshold = 1.0 - (_GlitchFrequency * 0.05);
+
+                if (tearTrigger > tearThreshold)
+                {
+                    glitchUV.x += (frac(sin(colorUV.y * 50.0) * 43758.5453) - 0.5) * _GlitchIntensity * 0.5;
                 }
 
-                // 像素化 UV：颜色采样吸附到像素格，描边/深度/法线采样保留原始 uv。
-                // 两条路径分开，PixelSize 不会影响边缘检测偏移。
-                float2 colorUV = GetPixelatedUV(pixelatedUV);
-
-                half4 col = half4(0, 0, 0, 1);
-                if (_EnableRetroCRT > 0.5)
+                float totalCA = 0.0 + dynamicCA;
+                #if defined(_ENABLE_RETRO_CRT)
+                totalCA += _ChromaticAberration;
+                #endif
+                
+                if (totalCA > 0.0001)
                 {
-                    float r = SAMPLE_TEXTURE2D_X(_BlitTexture, sampler_LinearClamp, colorUV + float2(_ChromaticAberration, 0)).r;
-                    float g = SAMPLE_TEXTURE2D_X(_BlitTexture, sampler_LinearClamp, colorUV).g;
-                    float b = SAMPLE_TEXTURE2D_X(_BlitTexture, sampler_LinearClamp, colorUV - float2(_ChromaticAberration, 0)).b;
+                    float r = SAMPLE_TEXTURE2D_X(_BlitTexture, sampler_LinearClamp, glitchUV + float2(totalCA, 0)).r;
+                    float g = SAMPLE_TEXTURE2D_X(_BlitTexture, sampler_LinearClamp, glitchUV).g;
+                    float b = SAMPLE_TEXTURE2D_X(_BlitTexture, sampler_LinearClamp, glitchUV - float2(totalCA, 0)).b;
                     col = half4(r, g, b, 1.0);
                 }
                 else
                 {
-                    col = SAMPLE_TEXTURE2D_X(_BlitTexture, sampler_LinearClamp, colorUV);
+                    col = SAMPLE_TEXTURE2D_X(_BlitTexture, sampler_LinearClamp, glitchUV);
                 }
 
+                float2 noiseUV = colorUV * 3.0 + float2(frac(time * 1.1), frac(time * 0.8));
+                float noise = SAMPLE_TEXTURE2D(_NoiseTex, sampler_NoiseTex, noiseUV).r;
+                col.rgb += (noise - 0.5) * _FilmGrainIntensity;
+
+                float3 n = SampleSceneNormals(colorUV);
+                float3 vaporColor = float3(1.0, 0.4, 0.8);
+                col.rgb += n * vaporColor * 0.05 * _GlitchIntensity;
+
+                #else
+
+                #if defined(_ENABLE_RETRO_CRT)
+                float r = SAMPLE_TEXTURE2D_X(_BlitTexture, sampler_LinearClamp, colorUV + float2(_ChromaticAberration, 0)).r;
+                float g = SAMPLE_TEXTURE2D_X(_BlitTexture, sampler_LinearClamp, colorUV).g;
+                float b = SAMPLE_TEXTURE2D_X(_BlitTexture, sampler_LinearClamp, colorUV - float2(_ChromaticAberration, 0)).b;
+                col = half4(r, g, b, 1.0);
+                #else
+                col = SAMPLE_TEXTURE2D_X(_BlitTexture, sampler_LinearClamp, colorUV);
+                #endif
+
+                #endif
+
+                // --- 1. Color Mapping (Cel Shading / Silhouette) ---
+                #if defined(_ENABLE_COLOR_MAPPING)
+                
                 col.rgb = (col.rgb - 0.5) * _Contrast + 0.5 + _Brightness;
                 col.rgb = clamp(col.rgb, 0.001, 1.0);
 
                 float rawLuma = dot(col.rgb, float3(0.299, 0.587, 0.114));
 
-                if (_EnableSilhouette > 0.5)
-                {
-                    float3 silCol = _SilhouetteShadowColor.rgb;
-                    silCol = lerp(silCol, _SilhouetteMidColor.rgb, step(_SilhouetteThreshold1, rawLuma));
-                    silCol = lerp(silCol, _SilhouetteHighColor.rgb, step(_SilhouetteThreshold2, rawLuma));
-                    col.rgb = silCol;
-                }
-                else
-                {
-                    if (_UseRampMap > 0.5)
-                    {
-                        col.rgb *= SAMPLE_TEXTURE2D(_RampMap, sampler_RampMap, float2(rawLuma, 0.5)).rgb;
-                    }
-                    else
-                    {
-                        float3 hsv = RGBtoHSV(col.rgb);
-                        float isShadow = 1.0 - smoothstep(_ShadowThreshold - _ShadowSmoothness, _ShadowThreshold + _ShadowSmoothness, hsv.z);
-                        float isLight = 1.0 - isShadow;
+                #if defined(_ENABLE_SILHOUETTE)
+                float3 silCol = _SilhouetteShadowColor.rgb;
+                silCol = lerp(silCol, _SilhouetteMidColor.rgb, step(_SilhouetteThreshold1, rawLuma));
+                silCol = lerp(silCol, _SilhouetteHighColor.rgb, step(_SilhouetteThreshold2, rawLuma));
+                col.rgb = silCol;
+                #else
+                    #if defined(_USE_RAMP_MAP)
+                    col.rgb *= SAMPLE_TEXTURE2D(_RampMap, sampler_RampMap, float2(rawLuma, 0.5)).rgb;
+                    #else
+                    
+                    float3 hsv = RGBtoHSV(col.rgb);
+                    
+                    // Fixed Analytical Cel Shading
+                    // Formula maps hsv.z from [0, 1] into discrete bins smoothly.
+                    float steps = max(1.0, float(_CelSteps));
+                    float stepSize = 1.0 / steps;
+                    
+                    float steppedZ = (floor(hsv.z * steps) + smoothstep(0.5 - _CelStepSmoothness, 0.5 + _CelStepSmoothness, frac(hsv.z * steps))) * stepSize;
+                    // Ensure the darkest step is never completely black (unless original is pure black), 
+                    // this prevents the screen from going completely dark when steps are low.
+                    steppedZ = max(steppedZ, stepSize * 0.5);
+                    
+                    float isShadow = 1.0 - smoothstep(_ShadowThreshold - _ShadowSmoothness, _ShadowThreshold + _ShadowSmoothness, hsv.z);
+                    float isLight = 1.0 - isShadow;
 
-                        float3 shadowHSV = hsv;
-                        shadowHSV.x = frac(shadowHSV.x + _ShadowHueShift);
-                        shadowHSV.y = saturate(shadowHSV.y * (1.0 + _ShadowSatBoost));
-                        shadowHSV.z = shadowHSV.z * _ShadowDarken;
+                    float3 shadowHSV = hsv;
+                    shadowHSV.x = frac(shadowHSV.x + _ShadowHueShift);
+                    shadowHSV.y = saturate(shadowHSV.y * (1.0 + _ShadowSatBoost));
+                    shadowHSV.z = steppedZ * _ShadowDarken;
 
-                        float3 lightHSV = hsv;
-                        lightHSV.y = saturate(lightHSV.y * _Saturation);
+                    float3 lightHSV = hsv;
+                    lightHSV.y = saturate(lightHSV.y * _Saturation);
+                    lightHSV.z = steppedZ;
 
-                        hsv = shadowHSV * isShadow + lightHSV * isLight;
-                        col.rgb = HSVtoRGB(hsv);
-                    }
-                }
+                    hsv = shadowHSV * isShadow + lightHSV * isLight;
+                    col.rgb = HSVtoRGB(hsv);
 
-                float lumFinal = dot(col.rgb, float3(0.299, 0.587, 0.114));
-                float shadowW = saturate(1.0 - lumFinal * 2.5);
-                float highlightW = saturate((lumFinal - 0.6) * 2.5);
-                col.rgb += _ShadowTint.rgb * _ShadowInfluence * shadowW;
-                col.rgb += _HighlightTint.rgb * _HighlightInfluence * highlightW;
-                col.rgb = saturate((col.rgb - 0.5) * _FinalContrast + 0.5);
+                    #endif // RAMP_MAP
+                #endif // SILHOUETTE
                 
-                lumFinal = dot(col.rgb, float3(0.299, 0.587, 0.114));
-                col.rgb = saturate(lerp(float3(lumFinal, lumFinal, lumFinal), col.rgb, _FinalSaturation));
+                #endif // ENABLE_COLOR_MAPPING
+                
+                // Keep rawLuma updated for patterns
+                float currentLuma = dot(col.rgb, float3(0.299, 0.587, 0.114));
 
+                // --- 2. Pop Art Pattern Shading ---
+                #if defined(_ENABLE_COMIC_PATTERN)
                 if (_PatternType > 0)
                 {
                     float2 screenAspect = float2(_ScreenParams.x / _ScreenParams.y, 1.0);
                     float2 patternUV = pixelatedUV * screenAspect * _PatternScale * 50.0;
                     patternUV = mul(GetRotationMatrix(_PatternAngle), patternUV);
                     
-                    float isShape = 0.0;
-
-                    if (_PatternType == 1)
+                    // The darker the pixel, the smaller the color dot should be (revealing more black gaps)
+                    float dotRadius = saturate(currentLuma / max(_PatternLumaThreshold, 0.001)) * 0.7 * _PatternIntensity;
+                    float isDot = 0.0;
+                    
+                    if (_PatternType == 1) // Dots
                     {
                         float2 grid = frac(patternUV) - 0.5;
-                        float dist = length(grid);
-                        float radius = saturate(1.0 - lumFinal) * 0.7;
-                        isShape = 1.0 - step(radius, dist);
+                        isDot = 1.0 - smoothstep(dotRadius - 0.05, dotRadius + 0.05, length(grid));
                     }
-                    else if (_PatternType == 2)
+                    else if (_PatternType == 2) // Hatching
                     {
-                        float lineGradient = frac(patternUV.x);
-                        float thickness = saturate(1.0 - lumFinal) * 0.8;
-                        isShape = 1.0 - step(thickness, lineGradient);
+                        float lineGradient = abs(frac(patternUV.x) - 0.5) * 2.0;
+                        isDot = 1.0 - smoothstep(dotRadius - 0.05, dotRadius + 0.05, lineGradient);
                     }
 
-                    float patternMask = isShape * (1.0 - smoothstep(_PatternLumaThreshold - 0.05, _PatternLumaThreshold + 0.05, lumFinal)) * _PatternIntensity;
-                    col.rgb = lerp(col.rgb, _PatternColor.rgb, patternMask);
+                    float patternRegion = 1.0 - smoothstep(_PatternLumaThreshold - 0.05, _PatternLumaThreshold + 0.05, currentLuma);
+                    
+                    if (patternRegion > 0.0) 
+                    {
+                        // 网点内保留原像素颜色，网点边缘（缝隙）使用 PatternColor（通常为黑色）
+                        float3 dotColor = col.rgb;
+                        float3 gapColor = _PatternColor.rgb;
+                        
+                        float3 halftoneCol = lerp(gapColor, dotColor, isDot);
+                        col.rgb = lerp(col.rgb, halftoneCol, patternRegion);
+                    }
                 }
+                #endif
 
+                // --- 3. Color Grading ---
+                #if defined(_ENABLE_COLOR_GRADING)
+                float shadowW = saturate(1.0 - currentLuma * 2.0);
+                col.rgb += _ShadowTint.rgb * _ShadowInfluence * shadowW;
+                
+                col.rgb = saturate((col.rgb - 0.5) * _FinalContrast + 0.5);
+                float finalLuma = dot(col.rgb, float3(0.299, 0.587, 0.114));
+                col.rgb = saturate(lerp(float3(finalLuma, finalLuma, finalLuma), col.rgb, _FinalSaturation));
+                #endif
+
+                // --- 4. Manga Lines ---
+                #if defined(_ENABLE_MANGA_LINES)
                 if (_LineIntensity > 0.0)
                 {
                     float rawDepth = SampleSceneDepth(uv);
@@ -328,15 +482,16 @@ Shader "Hidden/CelLookPostProcess"
 
                     if (!isSky)
                     {
-                        // 描边检测步长始终为 1 个屏幕原始像素，不受 PixelSize 影响。
-                        // PixelSize 只控制颜色 UV 的吸附，不应放大梯度采样偏移，
-                        // 否则未开启 Kuwahara 时仅调 PixelSize 也会导致描边错位。
                         float2 ts = _LineThickness / _ScreenParams.xy;
                         
                         float depthEdge = RobertsCrossDepth(uv, ts);
                         float normalEdge = RobertsCrossNormal(uv, ts);
+                        float colorEdge = RobertsCrossLuma(uv, ts);
 
-                        float edge = saturate(step(_DepthThreshold, depthEdge) + step(_NormalThreshold, normalEdge));
+                        float edge = saturate(step(max(_DepthThreshold, 0.001), depthEdge) + 
+                                              step(max(_NormalThreshold, 0.001), normalEdge) + 
+                                              step(max(_ColorThreshold, 0.001), colorEdge));
+                        
                         float sceneDepth = LinearEyeDepth(rawDepth, _ZBufferParams);
                         float fade = saturate(1.0 - sceneDepth / max(_DepthFalloff, 0.001));
                         edge *= lerp(1.0, fade, step(0.01, _DepthFalloff));
@@ -344,17 +499,19 @@ Shader "Hidden/CelLookPostProcess"
                         col.rgb = lerp(col.rgb, _LineColor.rgb, edge * _LineIntensity);
                     }
                 }
+                #endif
 
-                if (_EnableRetroCRT > 0.5)
-                {
-                    float scanline = sin(uv.y * _ScanlineCount * 3.14159) * 0.5 + 0.5;
-                    col.rgb -= (1.0 - scanline) * _ScanlineIntensity;
-                    float2 vUV = uv * (1.0 - uv.yx);
-                    float vig = pow(vUV.x * vUV.y * 15.0, _VignetteIntensity);
-                    col.rgb *= saturate(vig);
-                }
+                // --- 5. Retro CRT Finish ---
+                #if defined(_ENABLE_RETRO_CRT)
+                float scanline = sin(uv.y * _ScanlineCount * 3.14159) * 0.5 + 0.5;
+                col.rgb -= (1.0 - scanline) * _ScanlineIntensity;
+                float2 vUV = uv * (1.0 - uv.yx);
+                float vig = pow(vUV.x * vUV.y * 15.0, _VignetteIntensity);
+                col.rgb *= saturate(vig);
+                #endif
 
-                half4 original = SAMPLE_TEXTURE2D_X(_OriginalCameraTex, sampler_LinearClamp, uv);
+                // Mix with original image based on master Effect Intensity
+                half4 original = SAMPLE_TEXTURE2D_X(_OriginalCameraTex, sampler_LinearClamp, input.texcoord);
                 return half4(lerp(original.rgb, col.rgb, _EffectIntensity), 1.0);
             }
             ENDHLSL

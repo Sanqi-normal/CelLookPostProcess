@@ -15,21 +15,31 @@ MonoBehaviour:
   preset:
     name: "\u6F2B\u753B"
     effectIntensity: 1
-    kuwaharaRadius: 0
+    enableStencil: 0
+    stencilRef: 1
+    preFilterMode: 0
+    kuwaharaRadius: 1
+    bilateralColorSigma: 0.1
+    bilateralSpatialSigma: 2
+    useRampMap: 0
+    rampMap: {fileID: 0}
+    celSteps: 2
+    celStepSmoothness: 0.02
     saturation: 1.47
     contrast: 0.9
     brightness: 0.1
     shadowThreshold: 0.45
+    shadowSmoothness: 0.05
     shadowHueShift: 0.03
     shadowSatBoost: 0.339
     shadowDarken: 0.412
-    enableLines: 1
-    lineThickness: 1.36
-    depthThreshold: 0.5
-    normalThreshold: 0.3
-    lineColor: {r: 0, g: 0, b: 0, a: 1}
     lineIntensity: 1
-    depthFalloff: 200
+    lineThickness: 1.06
+    depthThreshold: 0.5
+    normalThreshold: 0.703
+    colorThreshold: 0.371
+    lineColor: {r: 0, g: 0, b: 0, a: 1}
+    depthFalloff: 111.3
     finalSaturation: 1.61
     finalContrast: 0.764
     shadowTint: {r: 0, g: 0, b: 0.04, a: 1}
@@ -42,3 +52,23 @@ MonoBehaviour:
     silhouetteHighColor: {r: 1, g: 1, b: 1, a: 1}
     silhouetteThreshold1: 0
     silhouetteThreshold2: 0
+    enablePixelate: 0
+    pixelSize: 4
+    patternType: 0
+    patternScale: 10
+    patternAngle: 0.785398
+    patternIntensity: 0.8
+    patternColor: {r: 0.1, g: 0.1, b: 0.1, a: 1}
+    patternLumaThreshold: 0.5
+    enableRetroCRT: 0
+    crtCurve: 3.5
+    chromaticAberration: 0.005
+    scanlineCount: 600
+    scanlineIntensity: 0.3
+    vignetteIntensity: 1.5
+    enableVaporwave: 0
+    noiseTex: {fileID: 0}
+    glitchFrequency: 0.5
+    glitchSpeed: 1
+    glitchIntensity: 0.02
+    filmGrainIntensity: 0.05

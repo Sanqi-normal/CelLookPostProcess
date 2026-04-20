@@ -1,6 +1,5 @@
 // CelLookPreset.cs
 using UnityEngine;
-using UnityEngine.Rendering;
 
 namespace CelLookPostProcess
 {
@@ -11,40 +10,44 @@ namespace CelLookPostProcess
 
         public float effectIntensity = 1f;
 
-        // --- 新增：Stencil 模板测试 ---
         public bool enableStencil = false;
         public int stencilRef = 1;
 
+        public PreFilterMode preFilterMode = PreFilterMode.None;
         public int kuwaharaRadius = 2;
+        public float bilateralColorSigma = 0.1f;
+        public float bilateralSpatialSigma = 2.0f;
 
-        // --- 新增：Ramp 贴图支持 ---
+        public bool enableColorMapping = true;
         public bool useRampMap = false;
         public Texture rampMap = null;
+        public int celSteps = 3;
+        public float celStepSmoothness = 0.02f;
 
         public float saturation = 1.4f;
         public float contrast = 1.3f;
         public float brightness = 0f;
 
         public float shadowThreshold = 0.5f;
-        public float shadowSmoothness = 0.05f; // 新增平滑度
+        public float shadowSmoothness = 0.05f;
         public float shadowHueShift = 0.04f;
         public float shadowSatBoost = 0.3f;
         public float shadowDarken = 0.6f;
 
-        // 移除了 enableLines，统一由 lineIntensity 控制
+        public bool enableMangaLines = true;
         public float lineIntensity = 1f;
         public float lineThickness = 1.5f;
         public float depthThreshold = 0.01f;
         public float normalThreshold = 0.2f;
+        public float colorThreshold = 0.2f;
         public Color lineColor = new Color(0.05f, 0.05f, 0.08f);
         public float depthFalloff = 50f;
 
+        public bool enableColorGrading = true;
         public float finalSaturation = 1.1f;
         public float finalContrast = 1.1f;
         public Color shadowTint = new Color(0f, 0f, 0.05f);
-        public Color highlightTint = new Color(0.05f, 0.03f, 0f);
         public float shadowInfluence = 0.4f;
-        public float highlightInfluence = 0.3f;
 
         public bool enableSilhouette = false;
         public Color silhouetteShadowColor = new Color(0.1f, 0.1f, 0.2f);
@@ -56,21 +59,26 @@ namespace CelLookPostProcess
         public bool enablePixelate = false;
         public float pixelSize = 4f;
 
-        // --- Pattern 参数 ---
         public int patternType = 0;
         public float patternScale = 10f;
         public float patternAngle = 0.785398f;
         public float patternIntensity = 0.8f;
         public Color patternColor = new Color(0.1f, 0.1f, 0.1f, 1f);
-        public float patternLumaThreshold = 0.5f; // 新增图案控制阈值
+        public float patternLumaThreshold = 0.5f;
 
-        // --- Retro CRT 参数 ---
         public bool enableRetroCRT = false;
         public float crtCurve = 3.5f;
         public float chromaticAberration = 0.005f;
         public float scanlineCount = 600f;
         public float scanlineIntensity = 0.3f;
         public float vignetteIntensity = 1.5f;
+
+        public bool enableVaporwave = false;
+        public Texture noiseTex = null;
+        public float glitchFrequency = 0.5f;
+        public float glitchSpeed = 1.0f;
+        public float glitchIntensity = 0.02f;
+        public float filmGrainIntensity = 0.05f;
 
         public void ApplyTo(CelLookSettings target)
         {
@@ -79,10 +87,16 @@ namespace CelLookPostProcess
             target.enableStencil.Override(enableStencil);
             target.stencilRef.Override(stencilRef);
 
+            target.preFilterMode.Override(preFilterMode);
             target.kuwaharaRadius.Override(kuwaharaRadius);
+            target.bilateralColorSigma.Override(bilateralColorSigma);
+            target.bilateralSpatialSigma.Override(bilateralSpatialSigma);
 
+            target.enableColorMapping.Override(enableColorMapping);
             target.useRampMap.Override(useRampMap);
             target.rampMap.Override(rampMap);
+            target.celSteps.Override(celSteps);
+            target.celStepSmoothness.Override(celStepSmoothness);
 
             target.saturation.Override(saturation);
             target.contrast.Override(contrast);
@@ -93,19 +107,20 @@ namespace CelLookPostProcess
             target.shadowSatBoost.Override(shadowSatBoost);
             target.shadowDarken.Override(shadowDarken);
 
+            target.enableMangaLines.Override(enableMangaLines);
             target.lineIntensity.Override(lineIntensity);
             target.lineThickness.Override(lineThickness);
             target.depthThreshold.Override(depthThreshold);
             target.normalThreshold.Override(normalThreshold);
+            target.colorThreshold.Override(colorThreshold);
             target.lineColor.Override(lineColor);
             target.depthFalloff.Override(depthFalloff);
 
+            target.enableColorGrading.Override(enableColorGrading);
             target.finalSaturation.Override(finalSaturation);
             target.finalContrast.Override(finalContrast);
             target.shadowTint.Override(shadowTint);
-            target.highlightTint.Override(highlightTint);
             target.shadowInfluence.Override(shadowInfluence);
-            target.highlightInfluence.Override(highlightInfluence);
 
             target.enableSilhouette.Override(enableSilhouette);
             target.silhouetteShadowColor.Override(silhouetteShadowColor);
@@ -130,6 +145,13 @@ namespace CelLookPostProcess
             target.scanlineCount.Override(scanlineCount);
             target.scanlineIntensity.Override(scanlineIntensity);
             target.vignetteIntensity.Override(vignetteIntensity);
+
+            target.enableVaporwave.Override(enableVaporwave);
+            target.noiseTex.Override(noiseTex);
+            target.glitchFrequency.Override(glitchFrequency);
+            target.glitchSpeed.Override(glitchSpeed);
+            target.glitchIntensity.Override(glitchIntensity);
+            target.filmGrainIntensity.Override(filmGrainIntensity);
         }
 
         public void LoadFrom(CelLookSettings source)
@@ -139,10 +161,16 @@ namespace CelLookPostProcess
             enableStencil = source.enableStencil.value;
             stencilRef = source.stencilRef.value;
 
+            preFilterMode = source.preFilterMode.value;
             kuwaharaRadius = source.kuwaharaRadius.value;
+            bilateralColorSigma = source.bilateralColorSigma.value;
+            bilateralSpatialSigma = source.bilateralSpatialSigma.value;
 
+            enableColorMapping = source.enableColorMapping.value;
             useRampMap = source.useRampMap.value;
             rampMap = source.rampMap.value;
+            celSteps = source.celSteps.value;
+            celStepSmoothness = source.celStepSmoothness.value;
 
             saturation = source.saturation.value;
             contrast = source.contrast.value;
@@ -153,19 +181,20 @@ namespace CelLookPostProcess
             shadowSatBoost = source.shadowSatBoost.value;
             shadowDarken = source.shadowDarken.value;
 
+            enableMangaLines = source.enableMangaLines.value;
             lineIntensity = source.lineIntensity.value;
             lineThickness = source.lineThickness.value;
             depthThreshold = source.depthThreshold.value;
             normalThreshold = source.normalThreshold.value;
+            colorThreshold = source.colorThreshold.value;
             lineColor = source.lineColor.value;
             depthFalloff = source.depthFalloff.value;
 
+            enableColorGrading = source.enableColorGrading.value;
             finalSaturation = source.finalSaturation.value;
             finalContrast = source.finalContrast.value;
             shadowTint = source.shadowTint.value;
-            highlightTint = source.highlightTint.value;
             shadowInfluence = source.shadowInfluence.value;
-            highlightInfluence = source.highlightInfluence.value;
 
             enableSilhouette = source.enableSilhouette.value;
             silhouetteShadowColor = source.silhouetteShadowColor.value;
@@ -190,6 +219,13 @@ namespace CelLookPostProcess
             scanlineCount = source.scanlineCount.value;
             scanlineIntensity = source.scanlineIntensity.value;
             vignetteIntensity = source.vignetteIntensity.value;
+
+            enableVaporwave = source.enableVaporwave.value;
+            noiseTex = source.noiseTex.value;
+            glitchFrequency = source.glitchFrequency.value;
+            glitchSpeed = source.glitchSpeed.value;
+            glitchIntensity = source.glitchIntensity.value;
+            filmGrainIntensity = source.filmGrainIntensity.value;
         }
     }
 }

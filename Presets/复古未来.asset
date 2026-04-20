@@ -17,11 +17,16 @@ MonoBehaviour:
     effectIntensity: 1
     enableStencil: 0
     stencilRef: 1
-    kuwaharaRadius: 0
-    useRampMap: 0
+    preFilterMode: 0
+    kuwaharaRadius: 1
+    bilateralColorSigma: 0.1
+    bilateralSpatialSigma: 2
+    useRampMap: 1
     rampMap: {fileID: 0}
+    celSteps: 2
+    celStepSmoothness: 0.02
     saturation: 1.25
-    contrast: 0.5
+    contrast: 0.93
     brightness: 0.1
     shadowThreshold: 0.45
     shadowSmoothness: 0.05
@@ -32,10 +37,11 @@ MonoBehaviour:
     lineThickness: 1.76
     depthThreshold: 0.5
     normalThreshold: 1.5
+    colorThreshold: 0.2
     lineColor: {r: 0, g: 0, b: 0, a: 1}
     depthFalloff: 2.9
-    finalSaturation: 3
-    finalContrast: 1.05
+    finalSaturation: 0.81
+    finalContrast: 0.982
     shadowTint: {r: 0, g: 0, b: 0.04, a: 1}
     highlightTint: {r: 0.04, g: 0.02, b: 0, a: 1}
     shadowInfluence: 0.335
@@ -46,17 +52,23 @@ MonoBehaviour:
     silhouetteHighColor: {r: 1, g: 1, b: 1, a: 1}
     silhouetteThreshold1: 0.206
     silhouetteThreshold2: 0.879
-    enablePixelate: 1
+    enablePixelate: 0
     pixelSize: 2
     patternType: 0
-    patternScale: 32.6
+    patternScale: 31.1
     patternAngle: 2.26
     patternIntensity: 0.8
     patternColor: {r: 0, g: 0, b: 0, a: 1}
-    patternLumaThreshold: 0.5
+    patternLumaThreshold: 0
     enableRetroCRT: 1
-    crtCurve: 4.16
-    chromaticAberration: 0.005
-    scanlineCount: 366
-    scanlineIntensity: 0.3
-    vignetteIntensity: 0.37
+    crtCurve: 3.31
+    chromaticAberration: 0.0031
+    scanlineCount: 389
+    scanlineIntensity: 0.08
+    vignetteIntensity: 0.53
+    enableVaporwave: 0
+    noiseTex: {fileID: 0}
+    glitchFrequency: 0.5
+    glitchSpeed: 1
+    glitchIntensity: 0.02
+    filmGrainIntensity: 0.05

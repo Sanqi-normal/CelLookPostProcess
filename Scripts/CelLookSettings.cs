@@ -6,49 +6,70 @@ using UnityEngine.Rendering.Universal;
 
 namespace CelLookPostProcess
 {
+    public enum PreFilterMode { None = 0, Kuwahara = 1, Bilateral = 2 }
+
+    [System.Serializable]
+    public sealed class PreFilterModeParameter : VolumeParameter<PreFilterMode>
+    {
+        public PreFilterModeParameter(PreFilterMode value, bool overrideState = false) : base(value, overrideState) {}
+    }
+
     [System.Serializable, VolumeComponentMenu("Custom/Cel Look Post Process")]
     public class CelLookSettings : VolumeComponent, IPostProcessComponent
     {
-        [Header("== Global Settings ==")]
-        [Tooltip("整体效果强度。")]
+        [Header("== Global Settings (全局设置) ==")]
+        [Tooltip("Overall effect intensity / 整体效果强度。")]
         public ClampedFloatParameter effectIntensity = new ClampedFloatParameter(0.0f, 0.0f, 1.0f);
 
-        [Header("== Stencil Mask ==")]
-        [Tooltip("是否启用模板测试屏蔽特定对象（如第一人称武器）。")]
+        [Header("== Stencil Mask (模板遮罩) ==")]
+        [Tooltip("Enable stencil test to mask specific objects / 是否启用模板测试屏蔽特定对象（如第一人称武器）。")]
         public BoolParameter enableStencil = new BoolParameter(false);
-        [Tooltip("被屏蔽对象的 Stencil ID。")]
+        [Tooltip("Stencil ID of masked objects / 被屏蔽对象的 Stencil ID。")]
         public IntParameter stencilRef = new IntParameter(1);
 
-        [Header("== Pre-Filter ==")]
-        [Tooltip("Kuwahara滤波半径。为0时跳过此Pass。")]
-        public ClampedIntParameter kuwaharaRadius = new ClampedIntParameter(0, 0, 6);
+        [Header("== Pre-Filter (预过滤) ==")]
+        [Tooltip("Pre-filter mode: Smooths lighting while preserving edges / 预过滤模式：抹平光影同时保留边缘。")]
+        public PreFilterModeParameter preFilterMode = new PreFilterModeParameter(PreFilterMode.None);
+        [Tooltip("Kuwahara radius (Kuwahara mode only) / Kuwahara 半径（仅 Kuwahara 模式）。")]
+        public ClampedIntParameter kuwaharaRadius = new ClampedIntParameter(2, 1, 6);
+        [Tooltip("Bilateral color tolerance (Bilateral mode only) / Bilateral 颜色容差（仅 Bilateral 模式）。")]
+        public ClampedFloatParameter bilateralColorSigma = new ClampedFloatParameter(0.1f, 0.01f, 1.0f);
+        [Tooltip("Bilateral spatial tolerance (Bilateral mode only) / Bilateral 空间距离容差（仅 Bilateral 模式）。")]
+        public ClampedFloatParameter bilateralSpatialSigma = new ClampedFloatParameter(2.0f, 0.1f, 10.0f);
 
-        [Header("== Color & Luminance Mapping ==")]
-        [Tooltip("是否使用Ramp贴图代替数学二分法。")]
+        [Header("== Color & Luminance Mapping (色彩与亮度映射) ==")]
+        [Tooltip("Enable Cel Shading mapping / 开启色阶与明暗二分映射。取消勾选将完全关闭此部分效果。")]
+        public BoolParameter enableColorMapping = new BoolParameter(true);
+        [Tooltip("Use Ramp map instead of analytical cel steps / 是否使用Ramp贴图代替数学色阶法。")]
         public BoolParameter useRampMap = new BoolParameter(false);
-        [Tooltip("一维阶调渐变贴图（Ramp Texture）。")]
+        [Tooltip("1D Ramp Texture / 一维阶调渐变贴图（Ramp Texture）。")]
         public TextureParameter rampMap = new TextureParameter(null);
 
-        [Tooltip("二分法光影阈值（不使用Ramp时生效）。")]
+        [Tooltip("Analytical cel steps (effective without Ramp map) / 分析式色阶步数（无Ramp贴图时生效）。")]
+        public ClampedIntParameter celSteps = new ClampedIntParameter(3, 1, 10);
+        [Tooltip("Cel step smoothness / 色阶边缘平滑度。")]
+        public ClampedFloatParameter celStepSmoothness = new ClampedFloatParameter(0.02f, 0.0f, 0.2f);
+
+        [Tooltip("Shadow split threshold / 阴影分割阈值。")]
         public ClampedFloatParameter shadowThreshold = new ClampedFloatParameter(0.5f, 0.1f, 0.9f);
-        [Tooltip("二分法边缘平滑度。")]
+        [Tooltip("Shadow threshold smoothness / 阴影阈值平滑度。")]
         public ClampedFloatParameter shadowSmoothness = new ClampedFloatParameter(0.05f, 0.0f, 0.5f);
 
-        [Tooltip("亮部饱和度倍数。")]
+        [Tooltip("Highlight saturation multiplier / 亮部饱和度倍数。")]
         public ClampedFloatParameter saturation = new ClampedFloatParameter(1.4f, 0.5f, 3.0f);
-        [Tooltip("对比度。")]
+        [Tooltip("Contrast / 对比度。")]
         public ClampedFloatParameter contrast = new ClampedFloatParameter(1.3f, 0.5f, 3.0f);
-        [Tooltip("亮度偏移。")]
+        [Tooltip("Brightness offset / 亮度偏移。")]
         public ClampedFloatParameter brightness = new ClampedFloatParameter(0.0f, -0.3f, 0.3f);
 
-        [Tooltip("暗部色相偏移量。")]
+        [Tooltip("Shadow hue shift amount / 暗部色相偏移量。")]
         public ClampedFloatParameter shadowHueShift = new ClampedFloatParameter(0.04f, -0.2f, 0.2f);
-        [Tooltip("暗部饱和度额外增强。")]
+        [Tooltip("Shadow extra saturation boost / 暗部饱和度额外增强。")]
         public ClampedFloatParameter shadowSatBoost = new ClampedFloatParameter(0.3f, 0.0f, 1.5f);
-        [Tooltip("暗部亮度压暗系数。")]
+        [Tooltip("Shadow darken factor / 暗部亮度压暗系数。")]
         public ClampedFloatParameter shadowDarken = new ClampedFloatParameter(0.6f, 0.1f, 1.0f);
 
-        [Header("== Silhouette Mode ==")]
+        [Header("== Silhouette Mode (剪影模式) ==")]
         public BoolParameter enableSilhouette = new BoolParameter(false);
         public ColorParameter silhouetteShadowColor = new ColorParameter(new Color(0.1f, 0.1f, 0.2f, 1f), true, false, true);
         public ColorParameter silhouetteMidColor = new ColorParameter(new Color(0.4f, 0.2f, 0.5f, 1f), true, false, true);
@@ -56,34 +77,38 @@ namespace CelLookPostProcess
         public ClampedFloatParameter silhouetteThreshold1 = new ClampedFloatParameter(0.3f, 0f, 1f);
         public ClampedFloatParameter silhouetteThreshold2 = new ClampedFloatParameter(0.7f, 0f, 1f);
 
-        [Header("== Manga Line Art ==")]
-        [Tooltip("线条强度。0时关闭描边。")]
+        [Header("== Manga Line Art (漫画描边) ==")]
+        [Tooltip("Enable manga outline rendering / 开启描边渲染。取消勾选将完全关闭此效果。")]
+        public BoolParameter enableMangaLines = new BoolParameter(true);
+        [Tooltip("Line intensity. 0 disables outline / 线条强度。")]
         public ClampedFloatParameter lineIntensity = new ClampedFloatParameter(1.0f, 0.0f, 1.0f);
         public ClampedFloatParameter lineThickness = new ClampedFloatParameter(1.5f, 0.5f, 5.0f);
         public ClampedFloatParameter depthThreshold = new ClampedFloatParameter(0.01f, 0.0001f, 0.5f);
         public ClampedFloatParameter normalThreshold = new ClampedFloatParameter(0.2f, 0.01f, 1.5f);
+        [Tooltip("Luma color edge detection threshold (catches inner lines) / 亮度颜色边缘检测阈值（抓取内部线条）。")]
+        public ClampedFloatParameter colorThreshold = new ClampedFloatParameter(0.2f, 0.01f, 1.0f);
         public ColorParameter lineColor = new ColorParameter(new Color(0.05f, 0.05f, 0.08f, 1f), true, false, true);
         public ClampedFloatParameter depthFalloff = new ClampedFloatParameter(50f, 0f, 200f);
 
-        [Header("== Pattern Shading ==")]
-        [Tooltip("0: 关闭, 1: 圆点, 2: 排线")]
+        [Header("== Pattern Shading & Dynamic Halftone (动态网点纸) ==")]
+        [Tooltip("0: Off (关闭), 1: Dynamic Dots (动态圆点), 2: Dynamic Hatching (动态排线)")]
         public ClampedIntParameter patternType = new ClampedIntParameter(0, 0, 2);
         public ClampedFloatParameter patternScale = new ClampedFloatParameter(10f, 1f, 50f);
         public ClampedFloatParameter patternAngle = new ClampedFloatParameter(0.785398f, 0f, 3.14159f);
-        public ClampedFloatParameter patternIntensity = new ClampedFloatParameter(0.8f, 0f, 1f);
+        public ClampedFloatParameter patternIntensity = new ClampedFloatParameter(0.8f, 0f, 2f);
         public ColorParameter patternColor = new ColorParameter(new Color(0.1f, 0.1f, 0.1f, 1f), true, false, true);
-        [Tooltip("图案显示的亮度阈值（仅在此亮度以下的暗部生成图案）。")]
+        [Tooltip("Luma threshold for pattern (generates pattern in dark areas below this luma) / 图案显示的亮度阈值（仅在此亮度以下的暗部生成图案）。")]
         public ClampedFloatParameter patternLumaThreshold = new ClampedFloatParameter(0.5f, 0.0f, 1.0f);
 
-        [Header("== Color Grading ==")]
+        [Header("== Color Grading (最终调色) ==")]
+        [Tooltip("Enable color grading / 开启最终调色与画面微调。")]
+        public BoolParameter enableColorGrading = new BoolParameter(true);
         public ClampedFloatParameter finalSaturation = new ClampedFloatParameter(1.1f, 0.0f, 3.0f);
         public ClampedFloatParameter finalContrast = new ClampedFloatParameter(1.1f, 0.5f, 2.0f);
         public ColorParameter shadowTint = new ColorParameter(new Color(0.0f, 0.0f, 0.05f, 1f), true, false, true);
-        public ColorParameter highlightTint = new ColorParameter(new Color(0.05f, 0.03f, 0.0f, 1f), true, false, true);
         public ClampedFloatParameter shadowInfluence = new ClampedFloatParameter(0.4f, 0.0f, 1.0f);
-        public ClampedFloatParameter highlightInfluence = new ClampedFloatParameter(0.3f, 0.0f, 1.0f);
 
-        [Header("== Screen FX ==")]
+        [Header("== Screen FX (屏幕特效) ==")]
         public BoolParameter enablePixelate = new BoolParameter(false);
         public ClampedFloatParameter pixelSize = new ClampedFloatParameter(4.0f, 1.0f, 32.0f);
 
@@ -93,6 +118,18 @@ namespace CelLookPostProcess
         public ClampedFloatParameter scanlineCount = new ClampedFloatParameter(600f, 100f, 1500f);
         public ClampedFloatParameter scanlineIntensity = new ClampedFloatParameter(0.3f, 0.0f, 1.0f);
         public ClampedFloatParameter vignetteIntensity = new ClampedFloatParameter(1.5f, 0.0f, 5.0f);
+
+        [Header("== Vaporwave FX (蒸汽波故障特效) ==")]
+        public BoolParameter enableVaporwave = new BoolParameter(false);
+        public TextureParameter noiseTex = new TextureParameter(null);
+        [Tooltip("Glitch frequency (controls occurrence probability) / 故障发生频率（控制出现概率）")]
+        public ClampedFloatParameter glitchFrequency = new ClampedFloatParameter(0.5f, 0.0f, 1.0f);
+        [Tooltip("Glitch scroll and switch speed / 故障滚动和切换速度")]
+        public ClampedFloatParameter glitchSpeed = new ClampedFloatParameter(1.0f, 0.0f, 5.0f);
+        [Tooltip("Glitch tear intensity / 故障撕裂幅度")]
+        public ClampedFloatParameter glitchIntensity = new ClampedFloatParameter(0.02f, 0.0f, 0.2f);
+        [Tooltip("Film grain intensity / 胶卷颗粒强度")]
+        public ClampedFloatParameter filmGrainIntensity = new ClampedFloatParameter(0.05f, 0.0f, 0.5f);
 
         public bool IsActive() => active && effectIntensity.value > 0.001f;
         public bool IsTileCompatible() => false;
