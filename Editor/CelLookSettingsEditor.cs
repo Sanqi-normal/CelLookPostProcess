@@ -93,10 +93,7 @@ namespace CelLookPostProcess
             EditorGUILayout.HelpBox(
                 "Cel Look NPR 风格后处理渲染器\n" +
                 "调整全局强度(Effect Intensity)以开启效果。\n" +
-                "Pass 0: Kuwahara 抹除噪点暗斑\n" +
-                "Pass 1: 严格二分法色块化 (支持纯色剪影模式)\n" +
-                "Pass 2: 漫画线条描边 (深度/法线边缘检测)\n" +
-                "Pass 3: Pop Grading、图案排线阴影与复古CRT显示器特效混合",
+                "有关参数配置详见README.md",
                 MessageType.Info);
 
             EditorGUILayout.Space(4);
