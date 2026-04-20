@@ -9,12 +9,23 @@ namespace CelLookPostProcess
     public class CelLookRenderFeature : ScriptableRendererFeature
     {
         public RenderPassEvent renderPassEvent = RenderPassEvent.BeforeRenderingPostProcessing;
+        public Shader shader;
         private CelLookRenderPass _pass;
 
         public override void Create()
         {
-            _pass = new CelLookRenderPass(renderPassEvent);
+            _pass = new CelLookRenderPass(renderPassEvent, shader);
         }
+
+#if UNITY_EDITOR
+        private void OnValidate()
+        {
+            if (shader == null)
+            {
+                shader = Shader.Find("Hidden/CelLookPostProcess");
+            }
+        }
+#endif
 
         public override void AddRenderPasses(ScriptableRenderer renderer, ref RenderingData renderingData)
         {
@@ -42,6 +53,7 @@ namespace CelLookPostProcess
         private const int PASS_UBER = 2;
 
         private Material _material;
+        private Shader _shader;
         private CelLookSettings _settings;
         private RenderTextureDescriptor _rtDescriptor;
 
@@ -109,9 +121,10 @@ namespace CelLookPostProcess
         private static readonly int ID_StencilRef = Shader.PropertyToID("_StencilRef");
         private static readonly int ID_StencilComp = Shader.PropertyToID("_StencilComp");
 
-        public CelLookRenderPass(RenderPassEvent evt)
+        public CelLookRenderPass(RenderPassEvent evt, Shader shader)
         {
             renderPassEvent = evt;
+            _shader = shader;
             ConfigureInput(ScriptableRenderPassInput.Depth | ScriptableRenderPassInput.Normal);
         }
 
@@ -119,13 +132,9 @@ namespace CelLookPostProcess
         {
             _settings = settings;
 
-            if (_material == null)
+            if (_material == null && _shader != null)
             {
-                var shader = Shader.Find("Hidden/CelLookPostProcess");
-                if (shader != null)
-                {
-                    _material = CoreUtils.CreateEngineMaterial(shader);
-                }
+                _material = CoreUtils.CreateEngineMaterial(_shader);
             }
         }
 
