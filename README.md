@@ -205,3 +205,6 @@ A: Volume 组件需要在 Scene 视图启用 "Always Refresh"
 
 ### Q: 不能正常保存和加载预设
 A:之前路径是硬编码，修复一次后此问题应该解决了，如果还遇到可检查Presets路径是否正确
+
+### Q: 场景构建后丢失效果
+A: 一般是unity构建时剔除造成的，已添加着色器硬引用，仍不成功则在project settings-graphics-always included shaders中拖入cellookPostProcess.shader
