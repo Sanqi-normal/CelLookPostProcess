@@ -82,70 +82,57 @@ Assets/CelLookPostProcess/
 
 ## 参数详解
 
-### Global Settings
+### Global & Pre-Filter
+| 参数 | 说明 |
+| :--- | :--- |
+| Effect Intensity | 整体效果强度 |
+| Stencil Mask | 开启后可基于 Stencil ID 屏蔽特定对象（如第一人称武器） |
+| Pre-Filter Mode | 预处理模式：None, Kuwahara(去噪), Bilateral(双边平滑) |
+| Kuwahara Radius | Kuwahara 滤波半径 (越大越平滑) |
+| Bilateral Sigma | 颜色/空间容差参数 (控制边缘平滑度) |
 
-| 参数 | 说明 | 推荐值 |
-|------|------|--------|
-| Effect Intensity | 整体效果强度，0=关闭，1=完全生效 | 0~1 |
+### Color & Luminance Mapping
+| 参数 | 说明 |
+| :--- | :--- |
+| Use Ramp Map | 是否使用自定义 Ramp 贴图进行色彩映射 |
+| Cel Steps / Smooth | 分析式色阶分段数及其边缘平滑度 |
+| Shadow Threshold | 阴影分割阈值及其平滑度 |
+| Saturation / Contrast | 亮部饱和度倍数与整体对比度 |
+| Brightness Offset | 整体亮度偏移 |
+| Shadow Hue/Sat/Dark | 暗部色相偏移、额外饱和度与压暗控制 |
 
-### Pop Color Block（二分色块）
+### Silhouette Mode (剪影)
+| 参数 | 说明 |
+| :--- | :--- |
+| Colors | 分别设置 阴影/中间调/高光 的映射颜色 |
+| Thresholds | 设置两个阶段的色彩映射分割阈值 |
 
-| 参数 | 说明 | 推荐值 |
-|------|------|--------|
-| Kuwahara Radius | Kuwahara 滤波半径，越大越平滑 | 2~4 |
-| Saturation | 亮部饱和度倍数 | 1.2~1.8 |
-| Contrast | 整体对比度 | 1.2~1.8 |
-| Brightness | 整体亮度偏移 | -0.3~0.3 |
+### Manga Line Art (线条描边)
+| 参数 | 说明 |
+| :--- | :--- |
+| Line Intensity | 线条整体强度 (0为关闭) |
+| Line Thickness | 线条粗细 (像素) |
+| Thresholds | 基于深度(Depth)、法线(Normal)与亮度(Color)的边缘检测灵敏度 |
+| Depth Falloff | 远处线条淡化距离 |
+| Line Color | 描边线条颜色 |
 
-### Shadow Hue Shift（阴影二分）
+### Pattern Shading (动态网点纸)
+| 参数 | 说明 |
+| :--- | :--- |
+| Pattern Type | 设置为圆点或排线模式 |
+| Pattern Scale/Angle | 图案的密度(缩放)与旋转角度 |
+| Pattern Intensity | 图案对比强度 |
+| Pattern Color | 网点缝隙颜色 (通常为黑色) |
+| Pattern Luma Threshold | 图案生成的暗部亮度阈值 |
 
-| 参数 | 说明 | 推荐值 |
-|------|------|--------|
-| Shadow Threshold | 光影二分阈值，低于此值视为暗部 | 0.4~0.6 |
-| Shadow Hue Shift | 暗部色相偏移量 | 0.02~0.08 |
-| Shadow Sat Boost | 暗部饱和度额外增强 | 0.0~0.5 |
-| Shadow Darken | 暗部压暗系数 | 0.5~0.8 |
-
-### Silhouette Mode（剪影模式）
-
-| 参数 | 说明 | 推荐值 |
-|------|------|--------|
-| Enable Silhouette | 启用剪影模式（覆盖阴影二分设置） | - |
-| Silhouette Shadow Color | 阴影色 | - |
-| Silhouette Mid Color | 中间调色 | - |
-| Silhouette High Color | 高光色 | - |
-| Silhouette Threshold1 | 阴影→中间调阈值 | 0.3 |
-| Silhouette Threshold2 | 中间调→高光阈值 | 0.7 |
-
-### Manga Line Art（漫画线条）
-
-| 参数 | 说明 | 推荐值 |
-|------|------|--------|
-| Enable Lines | 是否开启描边 | true |
-| Line Thickness | 描边粗细（像素） | 1.5~2.5 |
-| Depth Threshold | 深度边缘检测灵敏度 | 0.005~0.02 |
-| Normal Threshold | 法线边缘检测灵敏度 | 0.1~0.3 |
-| Line Color | 线条颜色 | 深色 |
-| Line Intensity | 线条强度 | 0.8~1.0 |
-| Depth Falloff | 远处线条淡化距离 | 30~80 |
-
-### Pop Color Grading（最终调色）
-
-| 参数 | 说明 | 推荐值 |
-|------|------|--------|
-| Final Saturation | 最终饱和度 | 1.0~1.3 |
-| Final Contrast | 最终对比度 | 1.0~1.3 |
-| Shadow Tint | 阴影染色（偏蓝紫） | (0,0,0.05) |
-| Highlight Tint | 高光染色（偏暖黄） | (0.05,0.03,0) |
-| Shadow Influence | 阴影染色强度 | 0.3~0.7 |
-| Highlight Influence | 高光染色强度 | 0.2~0.5 |
-
-### Pixelate Mode（像素化）
-
-| 参数 | 说明 | 推荐值 |
-|------|------|--------|
-| Enable Pixelate | 启用像素化风格 | false |
-| Pixel Size | 像素块大小 | 4~8 |
+### Color Grading & Screen FX
+| 参数 | 说明 |
+| :--- | :--- |
+| Final Saturation/Contrast | 最终成图的饱和度与对比度 |
+| Shadow Tint | 阴影染色倾向及影响强度 |
+| Pixelate | 像素化大小 |
+| Retro CRT | 弯曲(Curve)、色差(CA)、扫描线(Scanline)等复古特征 |
+| Vaporwave | 噪声贴图、故障(Glitch)频率/速度/撕裂强度、颗粒感 |
 
 ---
 
