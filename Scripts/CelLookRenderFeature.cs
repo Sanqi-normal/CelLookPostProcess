@@ -143,8 +143,8 @@ namespace CelLookPostProcess
             _material.SetFloat(ID_EffectIntensity, _settings.effectIntensity.value);
 
             int stencilComp = _settings.enableStencil.value ? (int)CompareFunction.NotEqual : (int)CompareFunction.Always;
-            _material.SetInteger(ID_StencilRef, _settings.stencilRef.value);
-            _material.SetInteger(ID_StencilComp, stencilComp);
+            _material.SetFloat(ID_StencilRef, _settings.stencilRef.value);
+            _material.SetFloat(ID_StencilComp, stencilComp);
 
             _material.SetInteger(ID_KuwaharaRadius, _settings.kuwaharaRadius.value);
             _material.SetFloat(ID_BilateralColorSigma, _settings.bilateralColorSigma.value);
