@@ -18,9 +18,10 @@ MonoBehaviour:
     enableStencil: 0
     stencilRef: 1
     preFilterMode: 1
-    kuwaharaRadius: 6
+    kuwaharaRadius: 1
     bilateralColorSigma: 0.01
     bilateralSpatialSigma: 2
+    enableColorMapping: 1
     useRampMap: 1
     rampMap: {fileID: 0}
     celSteps: 2
@@ -33,19 +34,29 @@ MonoBehaviour:
     shadowHueShift: 0.03
     shadowSatBoost: 0.15
     shadowDarken: 0.7
+    enableMangaLines: 1
     lineIntensity: 0
     lineThickness: 1.84
     depthThreshold: 0.5
     normalThreshold: 1.5
     colorThreshold: 0.2
     lineColor: {r: 0, g: 0, b: 0, a: 1}
-    depthFalloff: 9.7
+    lineFadeStart: 5
+    lineFadeEnd: 50
+    lineWiggleIntensity: 0
+    lineWiggleSpeed: 12
+    enableSpeedLines: 0
+    speedLineMode: 2
+    speedLineIntensity: 0.5
+    speedLineDensity: 20
+    speedLineSpeed: 10
+    speedLineWidth: 0.5
+    speedLineColor: {r: 0, g: 0, b: 0, a: 1}
+    enableColorGrading: 1
     finalSaturation: 3
     finalContrast: 1.05
     shadowTint: {r: 0, g: 0, b: 0.04, a: 1}
-    highlightTint: {r: 0.04, g: 0.02, b: 0, a: 1}
     shadowInfluence: 0.335
-    highlightInfluence: 0.24
     enableSilhouette: 0
     silhouetteShadowColor: {r: 1, g: 1, b: 1, a: 1}
     silhouetteMidColor: {r: 0.735849, g: 0.735849, b: 0.735849, a: 1}
@@ -54,6 +65,8 @@ MonoBehaviour:
     silhouetteThreshold2: 0.879
     enablePixelate: 1
     pixelSize: 6
+    pixelColorCount: 16
+    pixelDitherIntensity: 0.012
     patternType: 0
     patternScale: 10
     patternAngle: 0.785398

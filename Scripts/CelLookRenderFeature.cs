@@ -84,7 +84,17 @@ namespace CelLookPostProcess
         private static readonly int ID_ColorThreshold = Shader.PropertyToID("_ColorThreshold");
         private static readonly int ID_LineColor = Shader.PropertyToID("_LineColor");
         private static readonly int ID_LineIntensity = Shader.PropertyToID("_LineIntensity");
-        private static readonly int ID_DepthFalloff = Shader.PropertyToID("_DepthFalloff");
+        private static readonly int ID_LineFadeStart = Shader.PropertyToID("_LineFadeStart");
+        private static readonly int ID_LineFadeEnd = Shader.PropertyToID("_LineFadeEnd");
+        private static readonly int ID_LineWiggleIntensity = Shader.PropertyToID("_LineWiggleIntensity");
+        private static readonly int ID_LineWiggleSpeed = Shader.PropertyToID("_LineWiggleSpeed");
+
+        private static readonly int ID_SpeedLineMode = Shader.PropertyToID("_SpeedLineMode");
+        private static readonly int ID_SpeedLineIntensity = Shader.PropertyToID("_SpeedLineIntensity");
+        private static readonly int ID_SpeedLineDensity = Shader.PropertyToID("_SpeedLineDensity");
+        private static readonly int ID_SpeedLineSpeed = Shader.PropertyToID("_SpeedLineSpeed");
+        private static readonly int ID_SpeedLineWidth = Shader.PropertyToID("_SpeedLineWidth");
+        private static readonly int ID_SpeedLineColor = Shader.PropertyToID("_SpeedLineColor");
         
         private static readonly int ID_FinalSaturation = Shader.PropertyToID("_FinalSaturation");
         private static readonly int ID_FinalContrast = Shader.PropertyToID("_FinalContrast");
@@ -105,6 +115,8 @@ namespace CelLookPostProcess
         private static readonly int ID_PatternLumaThreshold = Shader.PropertyToID("_PatternLumaThreshold");
 
         private static readonly int ID_PixelSize = Shader.PropertyToID("_PixelSize");
+        private static readonly int ID_PixelColorCount = Shader.PropertyToID("_PixelColorCount");
+        private static readonly int ID_PixelDitherIntensity = Shader.PropertyToID("_PixelDitherIntensity");
         private static readonly int ID_CRTCurve = Shader.PropertyToID("_CRTCurve");
         private static readonly int ID_ChromaticAberration = Shader.PropertyToID("_ChromaticAberration");
         private static readonly int ID_ScanlineCount = Shader.PropertyToID("_ScanlineCount");
@@ -172,7 +184,17 @@ namespace CelLookPostProcess
             _material.SetFloat(ID_ColorThreshold, _settings.colorThreshold.value);
             _material.SetColor(ID_LineColor, _settings.lineColor.value);
             _material.SetFloat(ID_LineIntensity, _settings.lineIntensity.value);
-            _material.SetFloat(ID_DepthFalloff, _settings.depthFalloff.value);
+            _material.SetFloat(ID_LineFadeStart, _settings.lineFadeStart.value);
+            _material.SetFloat(ID_LineFadeEnd, _settings.lineFadeEnd.value);
+            _material.SetFloat(ID_LineWiggleIntensity, _settings.lineWiggleIntensity.value);
+            _material.SetFloat(ID_LineWiggleSpeed, _settings.lineWiggleSpeed.value);
+
+            _material.SetInteger(ID_SpeedLineMode, (int)_settings.speedLineMode.value);
+            _material.SetFloat(ID_SpeedLineIntensity, _settings.speedLineIntensity.value);
+            _material.SetFloat(ID_SpeedLineDensity, _settings.speedLineDensity.value);
+            _material.SetFloat(ID_SpeedLineSpeed, _settings.speedLineSpeed.value);
+            _material.SetFloat(ID_SpeedLineWidth, _settings.speedLineWidth.value);
+            _material.SetColor(ID_SpeedLineColor, _settings.speedLineColor.value);
 
             _material.SetFloat(ID_FinalSaturation, _settings.finalSaturation.value);
             _material.SetFloat(ID_FinalContrast, _settings.finalContrast.value);
@@ -193,6 +215,8 @@ namespace CelLookPostProcess
             _material.SetFloat(ID_PatternLumaThreshold, _settings.patternLumaThreshold.value);
 
             _material.SetFloat(ID_PixelSize, _settings.pixelSize.value);
+            _material.SetInteger(ID_PixelColorCount, _settings.pixelColorCount.value);
+            _material.SetFloat(ID_PixelDitherIntensity, _settings.pixelDitherIntensity.value);
             _material.SetFloat(ID_CRTCurve, _settings.crtCurve.value);
             _material.SetFloat(ID_ChromaticAberration, _settings.chromaticAberration.value);
             _material.SetFloat(ID_ScanlineCount, _settings.scanlineCount.value);
@@ -217,6 +241,7 @@ namespace CelLookPostProcess
             CoreUtils.SetKeyword(_material, "_ENABLE_RETRO_CRT", _settings.enableRetroCRT.value);
             CoreUtils.SetKeyword(_material, "_ENABLE_PIXELATE", _settings.enablePixelate.value);
             CoreUtils.SetKeyword(_material, "_ENABLE_SILHOUETTE", _settings.enableSilhouette.value);
+            CoreUtils.SetKeyword(_material, "_ENABLE_SPEED_LINES", _settings.enableSpeedLines.value);
             CoreUtils.SetKeyword(_material, "_USE_RAMP_MAP", _settings.useRampMap.value);
             CoreUtils.SetKeyword(_material, "_ENABLE_COMIC_PATTERN", _settings.patternType.value > 0);
         }

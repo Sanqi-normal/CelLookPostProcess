@@ -7,11 +7,18 @@ using UnityEngine.Rendering.Universal;
 namespace CelLookPostProcess
 {
     public enum PreFilterMode { None = 0, Kuwahara = 1, Bilateral = 2 }
+    public enum SpeedLineMode { Horizontal = 0, Vertical = 1, Radial = 2 }
 
     [System.Serializable]
     public sealed class PreFilterModeParameter : VolumeParameter<PreFilterMode>
     {
         public PreFilterModeParameter(PreFilterMode value, bool overrideState = false) : base(value, overrideState) {}
+    }
+
+    [System.Serializable]
+    public sealed class SpeedLineModeParameter : VolumeParameter<SpeedLineMode>
+    {
+        public SpeedLineModeParameter(SpeedLineMode value, bool overrideState = false) : base(value, overrideState) {}
     }
 
     [System.Serializable, VolumeComponentMenu("Custom/Cel Look Post Process")]
@@ -88,7 +95,24 @@ namespace CelLookPostProcess
         [Tooltip("Luma color edge detection threshold (catches inner lines) / 亮度颜色边缘检测阈值（抓取内部线条）。")]
         public ClampedFloatParameter colorThreshold = new ClampedFloatParameter(0.2f, 0.01f, 1.0f);
         public ColorParameter lineColor = new ColorParameter(new Color(0.05f, 0.05f, 0.08f, 1f), true, false, true);
-        public ClampedFloatParameter depthFalloff = new ClampedFloatParameter(50f, 0f, 200f);
+        [Tooltip("Distance where lines start to fade / 线条开始淡出的起始距离。")]
+        public FloatParameter lineFadeStart = new FloatParameter(5f);
+        [Tooltip("Distance where lines completely disappear / 线条完全消失的截止距离。")]
+        public FloatParameter lineFadeEnd = new FloatParameter(50f);
+
+        [Tooltip("Line wiggle intensity (boiling effect) / 线条抖动强度（沸腾效果）。")]
+        public ClampedFloatParameter lineWiggleIntensity = new ClampedFloatParameter(0.0f, 0.0f, 0.01f);
+        [Tooltip("Line wiggle speed (frame rate of boiling) / 线条抖动速度（沸腾频率）。")]
+        public ClampedFloatParameter lineWiggleSpeed = new ClampedFloatParameter(12.0f, 0.0f, 60.0f);
+
+        [Header("== Speed Lines (动态速度线) ==")]
+        public BoolParameter enableSpeedLines = new BoolParameter(false);
+        public SpeedLineModeParameter speedLineMode = new SpeedLineModeParameter(SpeedLineMode.Radial);
+        public ClampedFloatParameter speedLineIntensity = new ClampedFloatParameter(0.5f, 0.0f, 1.0f);
+        public ClampedFloatParameter speedLineDensity = new ClampedFloatParameter(20.0f, 1.0f, 100.0f);
+        public ClampedFloatParameter speedLineSpeed = new ClampedFloatParameter(10.0f, 0.0f, 50.0f);
+        public ClampedFloatParameter speedLineWidth = new ClampedFloatParameter(0.5f, 0.0f, 1.0f);
+        public ColorParameter speedLineColor = new ColorParameter(Color.black, true, false, true);
 
         [Header("== Pattern Shading & Dynamic Halftone (动态网点纸) ==")]
         [Tooltip("0: Off (关闭), 1: Dynamic Dots (动态圆点), 2: Dynamic Hatching (动态排线)")]
@@ -110,7 +134,12 @@ namespace CelLookPostProcess
 
         [Header("== Screen FX (屏幕特效) ==")]
         public BoolParameter enablePixelate = new BoolParameter(false);
+        [Tooltip("Pixel size / 像素块大小。")]
         public ClampedFloatParameter pixelSize = new ClampedFloatParameter(4.0f, 1.0f, 32.0f);
+        [Tooltip("Color quantization levels (e.g., 8 means 8 colors per channel) / 色彩量化层级（如8代表每个通道只有8种颜色）。")]
+        public ClampedIntParameter pixelColorCount = new ClampedIntParameter(8, 2, 64);
+        [Tooltip("Bayer dithering intensity / 拜耳抖动强度。")]
+        public ClampedFloatParameter pixelDitherIntensity = new ClampedFloatParameter(0.5f, 0.0f, 1.0f);
 
         public BoolParameter enableRetroCRT = new BoolParameter(false);
         public ClampedFloatParameter crtCurve = new ClampedFloatParameter(3.5f, 1.0f, 10.0f);

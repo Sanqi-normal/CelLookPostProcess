@@ -24,7 +24,7 @@ MonoBehaviour:
     enableColorMapping: 1
     useRampMap: 1
     rampMap: {fileID: 0}
-    celSteps: 2
+    celSteps: 3
     celStepSmoothness: 0.02
     saturation: 1.1
     contrast: 1.1
@@ -36,12 +36,22 @@ MonoBehaviour:
     shadowDarken: 0.7
     enableMangaLines: 1
     lineIntensity: 1
-    lineThickness: 1.63
+    lineThickness: 3.86
     depthThreshold: 0.5
     normalThreshold: 1.5
     colorThreshold: 0.05
     lineColor: {r: 0, g: 0, b: 0, a: 1}
-    depthFalloff: 200
+    lineFadeStart: 5
+    lineFadeEnd: 50
+    lineWiggleIntensity: 0
+    lineWiggleSpeed: 0
+    enableSpeedLines: 0
+    speedLineMode: 2
+    speedLineIntensity: 0.5
+    speedLineDensity: 20
+    speedLineSpeed: 10
+    speedLineWidth: 0.5
+    speedLineColor: {r: 0, g: 0, b: 0, a: 1}
     enableColorGrading: 1
     finalSaturation: 3
     finalContrast: 1.05
@@ -55,11 +65,13 @@ MonoBehaviour:
     silhouetteThreshold2: 0.879
     enablePixelate: 0
     pixelSize: 4
+    pixelColorCount: 8
+    pixelDitherIntensity: 0.5
     patternType: 2
     patternScale: 24.2
     patternAngle: 0.785398
     patternIntensity: 1.043
-    patternColor: {r: 0.46540874, g: 0.46540874, b: 0.46540874, a: 1}
+    patternColor: {r: 0.11949676, g: 0.11949676, b: 0.11949676, a: 1}
     patternLumaThreshold: 0.044
     enableRetroCRT: 0
     crtCurve: 3.5

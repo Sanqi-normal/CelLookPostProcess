@@ -41,7 +41,18 @@ namespace CelLookPostProcess
         public float normalThreshold = 0.2f;
         public float colorThreshold = 0.2f;
         public Color lineColor = new Color(0.05f, 0.05f, 0.08f);
-        public float depthFalloff = 50f;
+        public float lineFadeStart = 5f;
+        public float lineFadeEnd = 50f;
+        public float lineWiggleIntensity = 0f;
+        public float lineWiggleSpeed = 12f;
+
+        public bool enableSpeedLines = false;
+        public SpeedLineMode speedLineMode = SpeedLineMode.Radial;
+        public float speedLineIntensity = 0.5f;
+        public float speedLineDensity = 20f;
+        public float speedLineSpeed = 10f;
+        public float speedLineWidth = 0.5f;
+        public Color speedLineColor = Color.black;
 
         public bool enableColorGrading = true;
         public float finalSaturation = 1.1f;
@@ -58,6 +69,8 @@ namespace CelLookPostProcess
 
         public bool enablePixelate = false;
         public float pixelSize = 4f;
+        public int pixelColorCount = 8;
+        public float pixelDitherIntensity = 0.5f;
 
         public int patternType = 0;
         public float patternScale = 10f;
@@ -114,7 +127,18 @@ namespace CelLookPostProcess
             target.normalThreshold.Override(normalThreshold);
             target.colorThreshold.Override(colorThreshold);
             target.lineColor.Override(lineColor);
-            target.depthFalloff.Override(depthFalloff);
+            target.lineFadeStart.Override(lineFadeStart);
+            target.lineFadeEnd.Override(lineFadeEnd);
+            target.lineWiggleIntensity.Override(lineWiggleIntensity);
+            target.lineWiggleSpeed.Override(lineWiggleSpeed);
+
+            target.enableSpeedLines.Override(enableSpeedLines);
+            target.speedLineMode.Override(speedLineMode);
+            target.speedLineIntensity.Override(speedLineIntensity);
+            target.speedLineDensity.Override(speedLineDensity);
+            target.speedLineSpeed.Override(speedLineSpeed);
+            target.speedLineWidth.Override(speedLineWidth);
+            target.speedLineColor.Override(speedLineColor);
 
             target.enableColorGrading.Override(enableColorGrading);
             target.finalSaturation.Override(finalSaturation);
@@ -131,6 +155,8 @@ namespace CelLookPostProcess
 
             target.enablePixelate.Override(enablePixelate);
             target.pixelSize.Override(pixelSize);
+            target.pixelColorCount.Override(pixelColorCount);
+            target.pixelDitherIntensity.Override(pixelDitherIntensity);
 
             target.patternType.Override(patternType);
             target.patternScale.Override(patternScale);
@@ -188,7 +214,18 @@ namespace CelLookPostProcess
             normalThreshold = source.normalThreshold.value;
             colorThreshold = source.colorThreshold.value;
             lineColor = source.lineColor.value;
-            depthFalloff = source.depthFalloff.value;
+            lineFadeStart = source.lineFadeStart.value;
+            lineFadeEnd = source.lineFadeEnd.value;
+            lineWiggleIntensity = source.lineWiggleIntensity.value;
+            lineWiggleSpeed = source.lineWiggleSpeed.value;
+
+            enableSpeedLines = source.enableSpeedLines.value;
+            speedLineMode = source.speedLineMode.value;
+            speedLineIntensity = source.speedLineIntensity.value;
+            speedLineDensity = source.speedLineDensity.value;
+            speedLineSpeed = source.speedLineSpeed.value;
+            speedLineWidth = source.speedLineWidth.value;
+            speedLineColor = source.speedLineColor.value;
 
             enableColorGrading = source.enableColorGrading.value;
             finalSaturation = source.finalSaturation.value;
@@ -205,6 +242,8 @@ namespace CelLookPostProcess
 
             enablePixelate = source.enablePixelate.value;
             pixelSize = source.pixelSize.value;
+            pixelColorCount = source.pixelColorCount.value;
+            pixelDitherIntensity = source.pixelDitherIntensity.value;
 
             patternType = source.patternType.value;
             patternScale = source.patternScale.value;

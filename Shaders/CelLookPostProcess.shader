@@ -67,8 +67,9 @@ Shader "Hidden/CelLookPostProcess"
         float  _ColorThreshold;
         float4 _LineColor;
         float  _LineIntensity;
-        float  _DepthFalloff;
-        
+        float  _LineFadeStart;
+        float  _LineFadeEnd;
+
         float  _FinalSaturation;
         float  _FinalContrast;
         float4 _ShadowTint;
@@ -81,6 +82,8 @@ Shader "Hidden/CelLookPostProcess"
         float  _SilhouetteThreshold2;
 
         float  _PixelSize;
+        int    _PixelColorCount;
+        float  _PixelDitherIntensity;
         float  _CRTCurve;
         float  _ChromaticAberration;
         float  _ScanlineCount;
@@ -94,13 +97,63 @@ Shader "Hidden/CelLookPostProcess"
         float4 _PatternColor;
         float  _PatternLumaThreshold;
         
+        float  _LineWiggleIntensity;
+        float  _LineWiggleSpeed;
+
+        int    _SpeedLineMode;
+        float  _SpeedLineIntensity;
+        float  _SpeedLineDensity;
+        float  _SpeedLineSpeed;
+        float  _SpeedLineWidth;
+        float4 _SpeedLineColor;
+
         TEXTURE2D_X(_OriginalCameraTex);
+
+        float Hash11(float p)
+        {
+            p = frac(p * .1031);
+            p *= p + 33.33;
+            p *= p + p;
+            return frac(p);
+        }
+
+        float2 Hash22(float2 p)
+        {
+            float3 p3 = frac(float3(p.xyx) * float3(.1031, .1030, .0973));
+            p3 += dot(p3, p3.yzx + 33.33);
+            return frac((p3.xx + p3.yz) * p3.zy);
+        }
+
+        float2 GetLineWiggleUV(float2 uv)
+        {
+            if (_LineWiggleIntensity <= 0.0) return uv;
+            float time = floor(_Time.y * _LineWiggleSpeed);
+            // Use much lower frequency noise for coherent wiggle (large grid blocks)
+            float2 noise = Hash22(floor(uv * 100.0) / 100.0 + time) - 0.5;
+            return uv + noise * _LineWiggleIntensity;
+        }
+
+        float GetBayer4x4(float2 uv)
+        {
+            float2 pixel = floor(uv * _ScreenParams.xy / max(1.0, _PixelSize));
+            int x = int(pixel.x) % 4;
+            int y = int(pixel.y) % 4;
+            int index = x + y * 4;
+            float bayer[16] = {
+                0.0 / 16.0, 8.0 / 16.0, 2.0 / 16.0, 10.0 / 16.0,
+                12.0 / 16.0, 4.0 / 16.0, 14.0 / 16.0, 6.0 / 16.0,
+                3.0 / 16.0, 11.0 / 16.0, 1.0 / 16.0, 9.0 / 16.0,
+                15.0 / 16.0, 7.0 / 16.0, 13.0 / 16.0, 5.0 / 16.0
+            };
+            return bayer[index];
+        }
 
         float2 GetPixelatedUV(float2 uv)
         {
             #if defined(_ENABLE_PIXELATE)
             float2 pixelRes = _ScreenParams.xy / max(1.0, _PixelSize);
-            return (floor(uv * pixelRes) + 0.5) / pixelRes;
+            // Use floor for hard edges
+            return floor(uv * pixelRes) / pixelRes;
             #else
             return uv;
             #endif
@@ -286,6 +339,7 @@ Shader "Hidden/CelLookPostProcess"
             #pragma multi_compile_local _ _ENABLE_RETRO_CRT
             #pragma multi_compile_local _ _ENABLE_PIXELATE
             #pragma multi_compile_local _ _ENABLE_SILHOUETTE
+            #pragma multi_compile_local _ _ENABLE_SPEED_LINES
             #pragma multi_compile_local _ _USE_RAMP_MAP
             #pragma multi_compile_local _ _ENABLE_COMIC_PATTERN
 
@@ -472,8 +526,10 @@ Shader "Hidden/CelLookPostProcess"
                 #if defined(_ENABLE_MANGA_LINES)
                 if (_LineIntensity > 0.0)
                 {
-                    float rawDepth = SampleSceneDepth(uv);
-                    
+                    float2 wiggleUV = GetLineWiggleUV(uv);
+                    float rawDepth = SampleSceneDepth(wiggleUV);
+                    float sceneDepth = LinearEyeDepth(rawDepth, _ZBufferParams);
+
                     #if defined(UNITY_REVERSED_Z)
                     bool isSky = rawDepth < 0.000001;
                     #else
@@ -482,26 +538,76 @@ Shader "Hidden/CelLookPostProcess"
 
                     if (!isSky)
                     {
-                        float2 ts = _LineThickness / _ScreenParams.xy;
+                        // Calculate distance-based attenuation for intensity and thickness
+                        float lineFade = saturate((_LineFadeEnd - sceneDepth) / max(_LineFadeEnd - _LineFadeStart, 0.001));
                         
-                        float depthEdge = RobertsCrossDepth(uv, ts);
-                        float normalEdge = RobertsCrossNormal(uv, ts);
-                        float colorEdge = RobertsCrossLuma(uv, ts);
+                        // Scale thickness down with distance to prevent distant objects from becoming blobs of black
+                        float thicknessScale = lerp(0.5, 1.0, lineFade);
+                        float2 ts = (_LineThickness * thicknessScale) / _ScreenParams.xy;
+                        
+                        float depthEdge = RobertsCrossDepth(wiggleUV, ts);
+                        float normalEdge = RobertsCrossNormal(wiggleUV, ts);
+                        float colorEdge = RobertsCrossLuma(wiggleUV, ts);
 
                         float edge = saturate(step(max(_DepthThreshold, 0.001), depthEdge) + 
                                               step(max(_NormalThreshold, 0.001), normalEdge) + 
                                               step(max(_ColorThreshold, 0.001), colorEdge));
                         
-                        float sceneDepth = LinearEyeDepth(rawDepth, _ZBufferParams);
-                        float fade = saturate(1.0 - sceneDepth / max(_DepthFalloff, 0.001));
-                        edge *= lerp(1.0, fade, step(0.01, _DepthFalloff));
-                        
-                        col.rgb = lerp(col.rgb, _LineColor.rgb, edge * _LineIntensity);
+                        col.rgb = lerp(col.rgb, _LineColor.rgb, edge * _LineIntensity * lineFade);
                     }
                 }
                 #endif
 
-                // --- 5. Retro CRT Finish ---
+                // --- 5. Speed Lines ---
+                #if defined(_ENABLE_SPEED_LINES)
+                float speedLines = 0.0;
+                float2 screenCenter = 0.5;
+                float2 speedUV = uv;
+                float animTime = _Time.y * _SpeedLineSpeed;
+                
+                if (_SpeedLineMode == 0) // Horizontal
+                {
+                    float row = floor(speedUV.y * _SpeedLineDensity);
+                    float noise = Hash11(row + floor(animTime));
+                    // Add movement along X
+                    float colNoise = Hash11(row + floor(speedUV.x * 2.0 - animTime * 0.5));
+                    if (noise > 0.4 && colNoise > 0.5)
+                    {
+                        float lineVal = smoothstep(_SpeedLineWidth, _SpeedLineWidth - 0.1, abs(frac(speedUV.y * _SpeedLineDensity) - 0.5));
+                        speedLines = lineVal;
+                    }
+                }
+                else if (_SpeedLineMode == 1) // Vertical
+                {
+                    float col = floor(speedUV.x * _SpeedLineDensity);
+                    float noise = Hash11(col + floor(animTime));
+                    // Add movement along Y
+                    float rowNoise = Hash11(col + floor(speedUV.y * 2.0 - animTime * 0.5));
+                    if (noise > 0.4 && rowNoise > 0.5)
+                    {
+                        float lineVal = smoothstep(_SpeedLineWidth, _SpeedLineWidth - 0.1, abs(frac(speedUV.x * _SpeedLineDensity) - 0.5));
+                        speedLines = lineVal;
+                    }
+                }
+                else // Radial
+                {
+                    float2 dir = speedUV - screenCenter;
+                    float dist = length(dir);
+                    float angle = atan2(dir.y, dir.x);
+                    float slice = floor((angle / 6.283185 + 0.5) * _SpeedLineDensity);
+                    float noise = Hash11(slice + floor(animTime));
+                    // Add movement outward
+                    float distNoise = Hash11(slice + floor(dist * 5.0 - animTime * 0.5));
+                    if (noise > 0.4 && distNoise > 0.5)
+                    {
+                        float lineVal = smoothstep(_SpeedLineWidth, _SpeedLineWidth - 0.1, abs(frac((angle / 6.283185 + 0.5) * _SpeedLineDensity) - 0.5));
+                        speedLines = lineVal * smoothstep(0.1, 0.4, dist);
+                    }
+                }
+                col.rgb = lerp(col.rgb, _SpeedLineColor.rgb, speedLines * _SpeedLineIntensity);
+                #endif
+
+                // --- 6. Retro CRT Finish ---
                 #if defined(_ENABLE_RETRO_CRT)
                 float scanline = sin(uv.y * _ScanlineCount * 3.14159) * 0.5 + 0.5;
                 col.rgb -= (1.0 - scanline) * _ScanlineIntensity;
@@ -510,7 +616,16 @@ Shader "Hidden/CelLookPostProcess"
                 col.rgb *= saturate(vig);
                 #endif
 
-                // Mix with original image based on master Effect Intensity
+                // --- 7. Pixel Art Post-Process (Quantization & Dithering) ---
+                #if defined(_ENABLE_PIXELATE)
+                float dither = GetBayer4x4(pixelatedUV);
+                float3 colWithDither = col.rgb + (dither - 0.5) * _PixelDitherIntensity;
+
+                // Color Quantization
+                float levels = max(2.0, float(_PixelColorCount));
+                col.rgb = floor(colWithDither * (levels - 1.0) + 0.5) / (levels - 1.0);
+                #endif
+
                 half4 original = SAMPLE_TEXTURE2D_X(_OriginalCameraTex, sampler_LinearClamp, input.texcoord);
                 return half4(lerp(original.rgb, col.rgb, _EffectIntensity), 1.0);
             }
