@@ -7,6 +7,14 @@ Shader "Hidden/CelLookPostProcess"
         _MainTex ("Screen Texture", 2D) = "white" {}
         _NoiseTex ("Noise Texture", 2D) = "white" {}
         
+        _OldStyleTex ("Old Style Texture", 2D) = "white" {}
+        _TransitionDepth ("Transition Depth", Float) = 0.0
+        _ScanDirection ("Scan Direction", Float) = 1.0
+        _ShakeIntensity ("Shake Intensity", Float) = 0.0
+        _OrganicWaveAmplitude ("Organic Wave Amplitude", Float) = 4.0
+        _VoidBandWidth ("Void Band Width", Float) = 8.0
+        _JitterBandWidth ("Jitter Band Width", Float) = 2.0
+
         _StencilRef ("Stencil Reference", Int) = 1
         [Enum(UnityEngine.Rendering.CompareFunction)] _StencilComp ("Stencil Comparison", Int) = 8
         
@@ -628,6 +636,106 @@ Shader "Hidden/CelLookPostProcess"
 
                 half4 original = SAMPLE_TEXTURE2D_X(_OriginalCameraTex, sampler_LinearClamp, input.texcoord);
                 return half4(lerp(original.rgb, col.rgb, _EffectIntensity), 1.0);
+            }
+            ENDHLSL
+        }
+
+        // PASS 3: Depth Blend Pass for Scanning Transition
+        Pass
+        {
+            Name "DepthBlend"
+            HLSLPROGRAM
+            #pragma vertex Vert
+            #pragma fragment FragBlend
+
+            TEXTURE2D_X(_OldStyleTex);
+            float _TransitionDepth;
+            float _ScanDirection;
+            float _ShakeIntensity;
+            float _OrganicWaveAmplitude;
+            float _VoidBandWidth;
+            float _JitterBandWidth;
+
+            half4 FragBlend(Varyings input) : SV_Target
+            {
+                float2 shakeOffset = float2(
+                    (Hash11(_Time.y * 50.0) - 0.5),
+                    (Hash11(_Time.y * 50.0 + 123.4) - 0.5)
+                ) * _ShakeIntensity;
+                
+                float2 uv = input.texcoord + shakeOffset;
+                float rawDepth = SampleSceneDepth(uv);
+                float sceneDepth = LinearEyeDepth(rawDepth, _ZBufferParams);
+
+                #if defined(UNITY_REVERSED_Z)
+                bool isSky = rawDepth < 0.000001;
+                #else
+                bool isSky = rawDepth > 0.999999;
+                #endif
+
+                if (isSky) 
+                {
+                    sceneDepth = 10000.0;
+                }
+
+                // 2. Organic Bleed (Wavy displacement of the depth plane)
+                float wave = sin(uv.x * 15.0 + _Time.y * 5.0) * cos(uv.y * 15.0 - _Time.y * 3.5);
+                wave += sin(uv.x * 30.0 - _Time.y * 4.0) * 0.5;
+                
+                // Scale wave amplitude by depth to prevent massive bubbles when very close to the camera.
+                // It peaks at about 10 meters away, and smoothly scales down to near zero as it approaches the camera lens.
+                float distanceScale = smoothstep(0.0, 10.0, sceneDepth);
+                float organicDepth = sceneDepth + wave * _OrganicWaveAmplitude * distanceScale;
+
+                half4 newStyle = SAMPLE_TEXTURE2D_X(_BlitTexture, sampler_LinearClamp, uv);
+                half4 oldStyle = SAMPLE_TEXTURE2D_X(_OldStyleTex, sampler_LinearClamp, uv);
+
+                float scanDiff = (organicDepth - _TransitionDepth) * _ScanDirection;
+                
+                half4 finalCol;
+                float voidWidth = _VoidBandWidth;
+                float jitterWidth = _JitterBandWidth;
+
+                if (scanDiff > voidWidth)
+                {
+                    finalCol = newStyle;
+                }
+                else if (scanDiff > 0.0)
+                {
+                    // 4. The Void Bridge: High contrast black & white negative space
+                    float voidLerp = scanDiff / voidWidth;
+                    half4 baseCol = lerp(oldStyle, newStyle, voidLerp);
+                    float luma = dot(baseCol.rgb, float3(0.299, 0.587, 0.114));
+                    
+                    float3 voidCol = luma > 0.3 ? float3(0.9, 0.9, 0.9) : float3(0.1, 0.1, 0.1);
+                    float voidFade = smoothstep(0.8, 1.0, voidLerp);
+                    
+                    finalCol.rgb = lerp(voidCol, newStyle.rgb, voidFade);
+                    finalCol.a = 1.0;
+                }
+                else if (scanDiff > -jitterWidth)
+                {
+                    // The Jittering Frontline
+                    float noise = Hash22(uv * _ScreenParams.xy + _Time.y * 30.0).x;
+                    float prob = (scanDiff + jitterWidth) / jitterWidth;
+                    
+                    float baseLuma = dot(oldStyle.rgb, float3(0.299, 0.587, 0.114));
+                    float3 voidStartCol = baseLuma > 0.3 ? float3(0.9, 0.9, 0.9) : float3(0.1, 0.1, 0.1);
+
+                    finalCol.rgb = (noise < prob) ? voidStartCol : oldStyle.rgb;
+                    finalCol.a = 1.0;
+
+                    if (abs(noise - prob) < 0.15)
+                    {
+                        finalCol.rgb = abs(voidStartCol - oldStyle.rgb); // Difference highlight
+                    }
+                }
+                else
+                {
+                    finalCol = oldStyle;
+                }
+
+                return finalCol;
             }
             ENDHLSL
         }

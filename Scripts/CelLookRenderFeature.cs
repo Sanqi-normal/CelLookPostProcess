@@ -8,6 +8,15 @@ namespace CelLookPostProcess
 {
     public class CelLookRenderFeature : ScriptableRendererFeature
     {
+        public static bool IsTransitioning;
+        public static float TransitionDepth;
+        public static float ScanDirection = 1f;
+        public static float ShakeIntensity = 0f;
+        public static float OrganicWaveAmplitude = 4f;
+        public static float VoidBandWidth = 8f;
+        public static float JitterBandWidth = 2f;
+        public static CelLookSettings OldSettingsForTransition;
+
         public RenderPassEvent renderPassEvent = RenderPassEvent.BeforeRenderingPostProcessing;
         public Shader shader;
         private CelLookRenderPass _pass;
@@ -51,15 +60,26 @@ namespace CelLookPostProcess
         private const int PASS_KUWAHARA = 0;
         private const int PASS_BILATERAL = 1;
         private const int PASS_UBER = 2;
+        private const int PASS_BLEND = 3;
 
         private Material _material;
+        private Material _oldMaterial;
         private Shader _shader;
         private CelLookSettings _settings;
         private RenderTextureDescriptor _rtDescriptor;
 
         private RTHandle _tempRT;
         private RTHandle _originalRT;
+        private RTHandle _oldStyleRT;
+        private RTHandle _prefilterRT;
 
+        private static readonly int ID_OldStyleTex = Shader.PropertyToID("_OldStyleTex");
+        private static readonly int ID_TransitionDepth = Shader.PropertyToID("_TransitionDepth");
+        private static readonly int ID_ScanDirection = Shader.PropertyToID("_ScanDirection");
+        private static readonly int ID_ShakeIntensity = Shader.PropertyToID("_ShakeIntensity");
+        private static readonly int ID_OrganicWaveAmplitude = Shader.PropertyToID("_OrganicWaveAmplitude");
+        private static readonly int ID_VoidBandWidth = Shader.PropertyToID("_VoidBandWidth");
+        private static readonly int ID_JitterBandWidth = Shader.PropertyToID("_JitterBandWidth");
         private static readonly int ID_EffectIntensity = Shader.PropertyToID("_EffectIntensity");
         private static readonly int ID_KuwaharaRadius = Shader.PropertyToID("_KuwaharaRadius");
         private static readonly int ID_BilateralColorSigma = Shader.PropertyToID("_BilateralColorSigma");
@@ -148,102 +168,106 @@ namespace CelLookPostProcess
             {
                 _material = CoreUtils.CreateEngineMaterial(_shader);
             }
+            if (_oldMaterial == null && _shader != null)
+            {
+                _oldMaterial = CoreUtils.CreateEngineMaterial(_shader);
+            }
         }
 
-        private void UpdateMaterialProperties()
+        private void UpdateMaterialProperties(CelLookSettings settings, Material material)
         {
-            _material.SetFloat(ID_EffectIntensity, _settings.effectIntensity.value);
+            material.SetFloat(ID_EffectIntensity, settings.effectIntensity.value);
 
-            int stencilComp = _settings.enableStencil.value ? (int)CompareFunction.NotEqual : (int)CompareFunction.Always;
-            _material.SetFloat(ID_StencilRef, _settings.stencilRef.value);
-            _material.SetFloat(ID_StencilComp, stencilComp);
+            int stencilComp = settings.enableStencil.value ? (int)CompareFunction.NotEqual : (int)CompareFunction.Always;
+            material.SetFloat(ID_StencilRef, settings.stencilRef.value);
+            material.SetFloat(ID_StencilComp, stencilComp);
 
-            _material.SetInteger(ID_KuwaharaRadius, _settings.kuwaharaRadius.value);
-            _material.SetFloat(ID_BilateralColorSigma, _settings.bilateralColorSigma.value);
-            _material.SetFloat(ID_BilateralSpatialSigma, _settings.bilateralSpatialSigma.value);
+            material.SetInteger(ID_KuwaharaRadius, settings.kuwaharaRadius.value);
+            material.SetFloat(ID_BilateralColorSigma, settings.bilateralColorSigma.value);
+            material.SetFloat(ID_BilateralSpatialSigma, settings.bilateralSpatialSigma.value);
 
-            if (_settings.rampMap.value != null)
+            if (settings.rampMap.value != null)
             {
-                _material.SetTexture(ID_RampMap, _settings.rampMap.value);
+                material.SetTexture(ID_RampMap, settings.rampMap.value);
             }
-            _material.SetInteger(ID_CelSteps, _settings.celSteps.value);
-            _material.SetFloat(ID_CelStepSmoothness, _settings.celStepSmoothness.value);
+            material.SetInteger(ID_CelSteps, settings.celSteps.value);
+            material.SetFloat(ID_CelStepSmoothness, settings.celStepSmoothness.value);
 
-            _material.SetFloat(ID_Saturation, _settings.saturation.value);
-            _material.SetFloat(ID_Contrast, _settings.contrast.value);
-            _material.SetFloat(ID_Brightness, _settings.brightness.value);
-            _material.SetFloat(ID_ShadowHueShift, _settings.shadowHueShift.value);
-            _material.SetFloat(ID_ShadowSatBoost, _settings.shadowSatBoost.value);
-            _material.SetFloat(ID_ShadowThreshold, _settings.shadowThreshold.value);
-            _material.SetFloat(ID_ShadowSmoothness, _settings.shadowSmoothness.value);
-            _material.SetFloat(ID_ShadowDarken, _settings.shadowDarken.value);
+            material.SetFloat(ID_Saturation, settings.saturation.value);
+            material.SetFloat(ID_Contrast, settings.contrast.value);
+            material.SetFloat(ID_Brightness, settings.brightness.value);
+            material.SetFloat(ID_ShadowHueShift, settings.shadowHueShift.value);
+            material.SetFloat(ID_ShadowSatBoost, settings.shadowSatBoost.value);
+            material.SetFloat(ID_ShadowThreshold, settings.shadowThreshold.value);
+            material.SetFloat(ID_ShadowSmoothness, settings.shadowSmoothness.value);
+            material.SetFloat(ID_ShadowDarken, settings.shadowDarken.value);
 
-            _material.SetFloat(ID_LineThickness, _settings.lineThickness.value);
-            _material.SetFloat(ID_DepthThreshold, _settings.depthThreshold.value);
-            _material.SetFloat(ID_NormalThreshold, _settings.normalThreshold.value);
-            _material.SetFloat(ID_ColorThreshold, _settings.colorThreshold.value);
-            _material.SetColor(ID_LineColor, _settings.lineColor.value);
-            _material.SetFloat(ID_LineIntensity, _settings.lineIntensity.value);
-            _material.SetFloat(ID_LineFadeStart, _settings.lineFadeStart.value);
-            _material.SetFloat(ID_LineFadeEnd, _settings.lineFadeEnd.value);
-            _material.SetFloat(ID_LineWiggleIntensity, _settings.lineWiggleIntensity.value);
-            _material.SetFloat(ID_LineWiggleSpeed, _settings.lineWiggleSpeed.value);
+            material.SetFloat(ID_LineThickness, settings.lineThickness.value);
+            material.SetFloat(ID_DepthThreshold, settings.depthThreshold.value);
+            material.SetFloat(ID_NormalThreshold, settings.normalThreshold.value);
+            material.SetFloat(ID_ColorThreshold, settings.colorThreshold.value);
+            material.SetColor(ID_LineColor, settings.lineColor.value);
+            material.SetFloat(ID_LineIntensity, settings.lineIntensity.value);
+            material.SetFloat(ID_LineFadeStart, settings.lineFadeStart.value);
+            material.SetFloat(ID_LineFadeEnd, settings.lineFadeEnd.value);
+            material.SetFloat(ID_LineWiggleIntensity, settings.lineWiggleIntensity.value);
+            material.SetFloat(ID_LineWiggleSpeed, settings.lineWiggleSpeed.value);
 
-            _material.SetInteger(ID_SpeedLineMode, (int)_settings.speedLineMode.value);
-            _material.SetFloat(ID_SpeedLineIntensity, _settings.speedLineIntensity.value);
-            _material.SetFloat(ID_SpeedLineDensity, _settings.speedLineDensity.value);
-            _material.SetFloat(ID_SpeedLineSpeed, _settings.speedLineSpeed.value);
-            _material.SetFloat(ID_SpeedLineWidth, _settings.speedLineWidth.value);
-            _material.SetColor(ID_SpeedLineColor, _settings.speedLineColor.value);
+            material.SetInteger(ID_SpeedLineMode, (int)settings.speedLineMode.value);
+            material.SetFloat(ID_SpeedLineIntensity, settings.speedLineIntensity.value);
+            material.SetFloat(ID_SpeedLineDensity, settings.speedLineDensity.value);
+            material.SetFloat(ID_SpeedLineSpeed, settings.speedLineSpeed.value);
+            material.SetFloat(ID_SpeedLineWidth, settings.speedLineWidth.value);
+            material.SetColor(ID_SpeedLineColor, settings.speedLineColor.value);
 
-            _material.SetFloat(ID_FinalSaturation, _settings.finalSaturation.value);
-            _material.SetFloat(ID_FinalContrast, _settings.finalContrast.value);
-            _material.SetColor(ID_ShadowTint, _settings.shadowTint.value);
-            _material.SetFloat(ID_ShadowInfluence, _settings.shadowInfluence.value);
+            material.SetFloat(ID_FinalSaturation, settings.finalSaturation.value);
+            material.SetFloat(ID_FinalContrast, settings.finalContrast.value);
+            material.SetColor(ID_ShadowTint, settings.shadowTint.value);
+            material.SetFloat(ID_ShadowInfluence, settings.shadowInfluence.value);
 
-            _material.SetColor(ID_SilhouetteShadowColor, _settings.silhouetteShadowColor.value);
-            _material.SetColor(ID_SilhouetteMidColor, _settings.silhouetteMidColor.value);
-            _material.SetColor(ID_SilhouetteHighColor, _settings.silhouetteHighColor.value);
-            _material.SetFloat(ID_SilhouetteThreshold1, _settings.silhouetteThreshold1.value);
-            _material.SetFloat(ID_SilhouetteThreshold2, _settings.silhouetteThreshold2.value);
+            material.SetColor(ID_SilhouetteShadowColor, settings.silhouetteShadowColor.value);
+            material.SetColor(ID_SilhouetteMidColor, settings.silhouetteMidColor.value);
+            material.SetColor(ID_SilhouetteHighColor, settings.silhouetteHighColor.value);
+            material.SetFloat(ID_SilhouetteThreshold1, settings.silhouetteThreshold1.value);
+            material.SetFloat(ID_SilhouetteThreshold2, settings.silhouetteThreshold2.value);
 
-            _material.SetInteger(ID_PatternType, _settings.patternType.value);
-            _material.SetFloat(ID_PatternScale, _settings.patternScale.value);
-            _material.SetFloat(ID_PatternAngle, _settings.patternAngle.value);
-            _material.SetFloat(ID_PatternIntensity, _settings.patternIntensity.value);
-            _material.SetColor(ID_PatternColor, _settings.patternColor.value);
-            _material.SetFloat(ID_PatternLumaThreshold, _settings.patternLumaThreshold.value);
+            material.SetInteger(ID_PatternType, settings.patternType.value);
+            material.SetFloat(ID_PatternScale, settings.patternScale.value);
+            material.SetFloat(ID_PatternAngle, settings.patternAngle.value);
+            material.SetFloat(ID_PatternIntensity, settings.patternIntensity.value);
+            material.SetColor(ID_PatternColor, settings.patternColor.value);
+            material.SetFloat(ID_PatternLumaThreshold, settings.patternLumaThreshold.value);
 
-            _material.SetFloat(ID_PixelSize, _settings.pixelSize.value);
-            _material.SetInteger(ID_PixelColorCount, _settings.pixelColorCount.value);
-            _material.SetFloat(ID_PixelDitherIntensity, _settings.pixelDitherIntensity.value);
-            _material.SetFloat(ID_CRTCurve, _settings.crtCurve.value);
-            _material.SetFloat(ID_ChromaticAberration, _settings.chromaticAberration.value);
-            _material.SetFloat(ID_ScanlineCount, _settings.scanlineCount.value);
-            _material.SetFloat(ID_ScanlineIntensity, _settings.scanlineIntensity.value);
-            _material.SetFloat(ID_VignetteIntensity, _settings.vignetteIntensity.value);
+            material.SetFloat(ID_PixelSize, settings.pixelSize.value);
+            material.SetInteger(ID_PixelColorCount, settings.pixelColorCount.value);
+            material.SetFloat(ID_PixelDitherIntensity, settings.pixelDitherIntensity.value);
+            material.SetFloat(ID_CRTCurve, settings.crtCurve.value);
+            material.SetFloat(ID_ChromaticAberration, settings.chromaticAberration.value);
+            material.SetFloat(ID_ScanlineCount, settings.scanlineCount.value);
+            material.SetFloat(ID_ScanlineIntensity, settings.scanlineIntensity.value);
+            material.SetFloat(ID_VignetteIntensity, settings.vignetteIntensity.value);
 
-            if (_settings.noiseTex.value != null)
+            if (settings.noiseTex.value != null)
             {
-                _material.SetTexture(ID_NoiseTex, _settings.noiseTex.value);
+                material.SetTexture(ID_NoiseTex, settings.noiseTex.value);
             }
-            _material.SetFloat(ID_GlitchFrequency, _settings.glitchFrequency.value);
-            _material.SetFloat(ID_GlitchSpeed, _settings.glitchSpeed.value);
-            _material.SetFloat(ID_GlitchIntensity, _settings.glitchIntensity.value);
-            _material.SetFloat(ID_FilmGrainIntensity, _settings.filmGrainIntensity.value);
+            material.SetFloat(ID_GlitchFrequency, settings.glitchFrequency.value);
+            material.SetFloat(ID_GlitchSpeed, settings.glitchSpeed.value);
+            material.SetFloat(ID_GlitchIntensity, settings.glitchIntensity.value);
+            material.SetFloat(ID_FilmGrainIntensity, settings.filmGrainIntensity.value);
 
             // Set Keywords for UberPass efficiency and explicit toggles
-            CoreUtils.SetKeyword(_material, "_ENABLE_COLOR_MAPPING", _settings.enableColorMapping.value);
-            CoreUtils.SetKeyword(_material, "_ENABLE_MANGA_LINES", _settings.enableMangaLines.value);
-            CoreUtils.SetKeyword(_material, "_ENABLE_COLOR_GRADING", _settings.enableColorGrading.value);
+            CoreUtils.SetKeyword(material, "_ENABLE_COLOR_MAPPING", settings.enableColorMapping.value);
+            CoreUtils.SetKeyword(material, "_ENABLE_MANGA_LINES", settings.enableMangaLines.value);
+            CoreUtils.SetKeyword(material, "_ENABLE_COLOR_GRADING", settings.enableColorGrading.value);
             
-            CoreUtils.SetKeyword(_material, "_ENABLE_VAPORWAVE", _settings.enableVaporwave.value);
-            CoreUtils.SetKeyword(_material, "_ENABLE_RETRO_CRT", _settings.enableRetroCRT.value);
-            CoreUtils.SetKeyword(_material, "_ENABLE_PIXELATE", _settings.enablePixelate.value);
-            CoreUtils.SetKeyword(_material, "_ENABLE_SILHOUETTE", _settings.enableSilhouette.value);
-            CoreUtils.SetKeyword(_material, "_ENABLE_SPEED_LINES", _settings.enableSpeedLines.value);
-            CoreUtils.SetKeyword(_material, "_USE_RAMP_MAP", _settings.useRampMap.value);
-            CoreUtils.SetKeyword(_material, "_ENABLE_COMIC_PATTERN", _settings.patternType.value > 0);
+            CoreUtils.SetKeyword(material, "_ENABLE_VAPORWAVE", settings.enableVaporwave.value);
+            CoreUtils.SetKeyword(material, "_ENABLE_RETRO_CRT", settings.enableRetroCRT.value);
+            CoreUtils.SetKeyword(material, "_ENABLE_PIXELATE", settings.enablePixelate.value);
+            CoreUtils.SetKeyword(material, "_ENABLE_SILHOUETTE", settings.enableSilhouette.value);
+            CoreUtils.SetKeyword(material, "_ENABLE_SPEED_LINES", settings.enableSpeedLines.value);
+            CoreUtils.SetKeyword(material, "_USE_RAMP_MAP", settings.useRampMap.value);
+            CoreUtils.SetKeyword(material, "_ENABLE_COMIC_PATTERN", settings.patternType.value > 0);
         }
 
         public override void OnCameraSetup(CommandBuffer cmd, ref RenderingData renderingData)
@@ -254,6 +278,8 @@ namespace CelLookPostProcess
 
             RenderingUtils.ReAllocateIfNeeded(ref _tempRT, _rtDescriptor, FilterMode.Bilinear, TextureWrapMode.Clamp, name: "_CelLookTemp");
             RenderingUtils.ReAllocateIfNeeded(ref _originalRT, _rtDescriptor, FilterMode.Bilinear, TextureWrapMode.Clamp, name: "_CelLookOriginal");
+            RenderingUtils.ReAllocateIfNeeded(ref _oldStyleRT, _rtDescriptor, FilterMode.Bilinear, TextureWrapMode.Clamp, name: "_CelLookOldStyle");
+            RenderingUtils.ReAllocateIfNeeded(ref _prefilterRT, _rtDescriptor, FilterMode.Bilinear, TextureWrapMode.Clamp, name: "_CelLookPrefilter");
         }
 
         public override void Execute(ScriptableRenderContext context, ref RenderingData renderingData)
@@ -261,7 +287,6 @@ namespace CelLookPostProcess
             if (_material == null || _settings == null) return;
 
             var cmd = CommandBufferPool.Get("CelLookPostProcess");
-            UpdateMaterialProperties();
 
             var cameraTarget = renderingData.cameraData.renderer.cameraColorTargetHandle;
             var depthTarget = renderingData.cameraData.renderer.cameraDepthTargetHandle;
@@ -269,29 +294,54 @@ namespace CelLookPostProcess
             Blitter.BlitCameraTexture(cmd, cameraTarget, _originalRT);
             cmd.SetGlobalTexture(ID_OriginalCameraTex, _originalRT);
 
-            // 为确保模板测试生效，需要绑定相机的Depth/Stencil Buffer
-            CoreUtils.SetRenderTarget(cmd, _tempRT, RenderBufferLoadAction.DontCare, RenderBufferStoreAction.Store, depthTarget, RenderBufferLoadAction.Load, RenderBufferStoreAction.Store);
+            if (CelLookRenderFeature.IsTransitioning && CelLookRenderFeature.OldSettingsForTransition != null)
+            {
+                RenderStyle(cmd, CelLookRenderFeature.OldSettingsForTransition, _oldMaterial, _originalRT, _oldStyleRT, depthTarget);
+                RenderStyle(cmd, _settings, _material, _originalRT, _tempRT, depthTarget);
 
-            if (_settings.preFilterMode.value == PreFilterMode.Kuwahara && _settings.kuwaharaRadius.value > 0)
-            {
-                Blitter.BlitCameraTexture(cmd, _originalRT, _tempRT, _material, PASS_KUWAHARA);
-                CoreUtils.SetRenderTarget(cmd, cameraTarget, RenderBufferLoadAction.Load, RenderBufferStoreAction.Store, depthTarget, RenderBufferLoadAction.Load, RenderBufferStoreAction.Store);
-                Blitter.BlitCameraTexture(cmd, _tempRT, cameraTarget, _material, PASS_UBER);
-            }
-            else if (_settings.preFilterMode.value == PreFilterMode.Bilateral)
-            {
-                Blitter.BlitCameraTexture(cmd, _originalRT, _tempRT, _material, PASS_BILATERAL);
-                CoreUtils.SetRenderTarget(cmd, cameraTarget, RenderBufferLoadAction.Load, RenderBufferStoreAction.Store, depthTarget, RenderBufferLoadAction.Load, RenderBufferStoreAction.Store);
-                Blitter.BlitCameraTexture(cmd, _tempRT, cameraTarget, _material, PASS_UBER);
+                _material.SetTexture(ID_OldStyleTex, _oldStyleRT);
+                _material.SetFloat(ID_TransitionDepth, CelLookRenderFeature.TransitionDepth);
+                _material.SetFloat(ID_ScanDirection, CelLookRenderFeature.ScanDirection);
+                _material.SetFloat(ID_ShakeIntensity, CelLookRenderFeature.ShakeIntensity);
+                _material.SetFloat(ID_OrganicWaveAmplitude, CelLookRenderFeature.OrganicWaveAmplitude);
+                _material.SetFloat(ID_VoidBandWidth, CelLookRenderFeature.VoidBandWidth);
+                _material.SetFloat(ID_JitterBandWidth, CelLookRenderFeature.JitterBandWidth);
+                Blitter.BlitCameraTexture(cmd, _tempRT, cameraTarget, _material, PASS_BLEND);
             }
             else
             {
-                CoreUtils.SetRenderTarget(cmd, cameraTarget, RenderBufferLoadAction.Load, RenderBufferStoreAction.Store, depthTarget, RenderBufferLoadAction.Load, RenderBufferStoreAction.Store);
-                Blitter.BlitCameraTexture(cmd, _originalRT, cameraTarget, _material, PASS_UBER);
+                RenderStyle(cmd, _settings, _material, _originalRT, cameraTarget, depthTarget);
             }
 
             context.ExecuteCommandBuffer(cmd);
             CommandBufferPool.Release(cmd);
+        }
+
+        private void RenderStyle(CommandBuffer cmd, CelLookSettings settings, Material material, RTHandle source, RTHandle destination, RenderTargetIdentifier depthTarget)
+        {
+            UpdateMaterialProperties(settings, material);
+
+            if (settings.preFilterMode.value == PreFilterMode.Kuwahara && settings.kuwaharaRadius.value > 0)
+            {
+                CoreUtils.SetRenderTarget(cmd, _prefilterRT, RenderBufferLoadAction.DontCare, RenderBufferStoreAction.Store, depthTarget, RenderBufferLoadAction.Load, RenderBufferStoreAction.Store);
+                Blitter.BlitCameraTexture(cmd, source, _prefilterRT, material, PASS_KUWAHARA);
+
+                CoreUtils.SetRenderTarget(cmd, destination, RenderBufferLoadAction.Load, RenderBufferStoreAction.Store, depthTarget, RenderBufferLoadAction.Load, RenderBufferStoreAction.Store);
+                Blitter.BlitCameraTexture(cmd, _prefilterRT, destination, material, PASS_UBER);
+            }
+            else if (settings.preFilterMode.value == PreFilterMode.Bilateral)
+            {
+                CoreUtils.SetRenderTarget(cmd, _prefilterRT, RenderBufferLoadAction.DontCare, RenderBufferStoreAction.Store, depthTarget, RenderBufferLoadAction.Load, RenderBufferStoreAction.Store);
+                Blitter.BlitCameraTexture(cmd, source, _prefilterRT, material, PASS_BILATERAL);
+
+                CoreUtils.SetRenderTarget(cmd, destination, RenderBufferLoadAction.Load, RenderBufferStoreAction.Store, depthTarget, RenderBufferLoadAction.Load, RenderBufferStoreAction.Store);
+                Blitter.BlitCameraTexture(cmd, _prefilterRT, destination, material, PASS_UBER);
+            }
+            else
+            {
+                CoreUtils.SetRenderTarget(cmd, destination, RenderBufferLoadAction.Load, RenderBufferStoreAction.Store, depthTarget, RenderBufferLoadAction.Load, RenderBufferStoreAction.Store);
+                Blitter.BlitCameraTexture(cmd, source, destination, material, PASS_UBER);
+            }
         }
 
         public override void OnCameraCleanup(CommandBuffer cmd) { }
@@ -299,8 +349,11 @@ namespace CelLookPostProcess
         public void Dispose()
         {
             _tempRT?.Release();
+            _oldStyleRT?.Release();
+            _prefilterRT?.Release();
             _originalRT?.Release();
             CoreUtils.Destroy(_material);
+            CoreUtils.Destroy(_oldMaterial);
         }
     }
 }
