@@ -45,6 +45,7 @@ namespace CelLookPostProcess
 
             if (settings == null || !settings.IsActive()) return;
 
+            _pass.renderPassEvent = renderPassEvent;
             _pass.Setup(settings);
             renderer.EnqueuePass(_pass);
         }
