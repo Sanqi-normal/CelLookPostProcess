@@ -317,30 +317,55 @@ namespace CelLookPostProcess
             CommandBufferPool.Release(cmd);
         }
 
-        private void RenderStyle(CommandBuffer cmd, CelLookSettings settings, Material material, RTHandle source, RTHandle destination, RenderTargetIdentifier depthTarget)
+
+        private void BlitWithStencil(CommandBuffer cmd, RTHandle source, RTHandle destination,
+                                     RTHandle depthStencil, Material material, int pass)
+        {
+            // Bind colour + depth/stencil together so the GPU Stencil test has a buffer to read.
+            cmd.SetRenderTarget(
+                destination,   RenderBufferLoadAction.Load, RenderBufferStoreAction.Store,
+                depthStencil,  RenderBufferLoadAction.Load, RenderBufferStoreAction.Store);
+
+            // Upload the source as _BlitTexture (the name Blit.hlsl / Vert expects).
+            cmd.SetGlobalTexture(Shader.PropertyToID("_BlitTexture"), source);
+            // Match the scale/bias that BlitCameraTexture normally sets.
+            cmd.SetGlobalVector(Shader.PropertyToID("_BlitScaleBias"), new Vector4(1f, 1f, 0f, 0f));
+
+            cmd.DrawProcedural(Matrix4x4.identity, material, pass,
+                               MeshTopology.Triangles, 3, 1);
+        }
+
+        private void RenderStyle(CommandBuffer cmd, CelLookSettings settings, Material material,
+                                 RTHandle source, RTHandle destination, RTHandle depthStencil)
         {
             UpdateMaterialProperties(settings, material);
 
+            bool useStencil = settings.enableStencil.value;
+
             if (settings.preFilterMode.value == PreFilterMode.Kuwahara && settings.kuwaharaRadius.value > 0)
             {
-                CoreUtils.SetRenderTarget(cmd, _prefilterRT, RenderBufferLoadAction.DontCare, RenderBufferStoreAction.Store, depthTarget, RenderBufferLoadAction.Load, RenderBufferStoreAction.Store);
+                // Pre-filter passes: no stencil needed, plain blit into intermediate RT.
                 Blitter.BlitCameraTexture(cmd, source, _prefilterRT, material, PASS_KUWAHARA);
-
-                CoreUtils.SetRenderTarget(cmd, destination, RenderBufferLoadAction.Load, RenderBufferStoreAction.Store, depthTarget, RenderBufferLoadAction.Load, RenderBufferStoreAction.Store);
-                Blitter.BlitCameraTexture(cmd, _prefilterRT, destination, material, PASS_UBER);
+                // Final Uber pass: bind depth+stencil when stencil masking is active.
+                if (useStencil)
+                    BlitWithStencil(cmd, _prefilterRT, destination, depthStencil, material, PASS_UBER);
+                else
+                    Blitter.BlitCameraTexture(cmd, _prefilterRT, destination, material, PASS_UBER);
             }
             else if (settings.preFilterMode.value == PreFilterMode.Bilateral)
             {
-                CoreUtils.SetRenderTarget(cmd, _prefilterRT, RenderBufferLoadAction.DontCare, RenderBufferStoreAction.Store, depthTarget, RenderBufferLoadAction.Load, RenderBufferStoreAction.Store);
                 Blitter.BlitCameraTexture(cmd, source, _prefilterRT, material, PASS_BILATERAL);
-
-                CoreUtils.SetRenderTarget(cmd, destination, RenderBufferLoadAction.Load, RenderBufferStoreAction.Store, depthTarget, RenderBufferLoadAction.Load, RenderBufferStoreAction.Store);
-                Blitter.BlitCameraTexture(cmd, _prefilterRT, destination, material, PASS_UBER);
+                if (useStencil)
+                    BlitWithStencil(cmd, _prefilterRT, destination, depthStencil, material, PASS_UBER);
+                else
+                    Blitter.BlitCameraTexture(cmd, _prefilterRT, destination, material, PASS_UBER);
             }
             else
             {
-                CoreUtils.SetRenderTarget(cmd, destination, RenderBufferLoadAction.Load, RenderBufferStoreAction.Store, depthTarget, RenderBufferLoadAction.Load, RenderBufferStoreAction.Store);
-                Blitter.BlitCameraTexture(cmd, source, destination, material, PASS_UBER);
+                if (useStencil)
+                    BlitWithStencil(cmd, source, destination, depthStencil, material, PASS_UBER);
+                else
+                    Blitter.BlitCameraTexture(cmd, source, destination, material, PASS_UBER);
             }
         }
 
